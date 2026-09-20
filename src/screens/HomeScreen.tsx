@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,9 +10,11 @@ import {
   StatusBar,
   Platform,
   Image,
+  Alert,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { supabase } from '../supabase';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
@@ -29,6 +31,16 @@ import HomeIcon from '../../assets/svgs/Home.svg';
 import CorazonIcon from '../../assets/svgs/Corazón.svg';
 import MasIcon from '../../assets/svgs/Más.svg';
 import MailIcon from '../../assets/svgs/mail.svg';
+
+// SVGs de Perfil
+import ProductoIcon from '../../assets/svgs/Producto.svg';
+import ComprasIcon from '../../assets/svgs/Compras.svg';
+import VentasIcon from '../../assets/svgs/Ventas.svg';
+import BilleteraIcon from '../../assets/svgs/Billetara.svg';
+import ConfiguracionIcon from '../../assets/svgs/Configuracion.svg';
+import PreguntaIcon from '../../assets/svgs/Pregunta.svg';
+import SiguienteIcon from '../../assets/svgs/Siguiente.svg';
+import EstrellaIcon from '../../assets/svgs/Estrella.svg';
 
 // Datos de Categorías con sus respectivos SVGs (Exacto al diseño y orden de Figma)
 const CATEGORIES = [
@@ -105,16 +117,52 @@ const RECENT_PRODUCTS = [
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'home' | 'favorites' | 'upload' | 'inbox' | 'profile'>('home');
   const [isGridView, setIsGridView] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setCurrentUser(user);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const userName =
+    currentUser?.user_metadata?.full_name ||
+    currentUser?.user_metadata?.name ||
+    (currentUser?.email ? currentUser.email.split('@')[0] : 'Jose Luis');
+
+  const userAvatar =
+    currentUser?.user_metadata?.avatar_url ||
+    currentUser?.user_metadata?.picture ||
+    null;
+
+  const userYear = currentUser?.created_at
+    ? new Date(currentUser.created_at).getFullYear()
+    : '2026';
+
   const toggleFavorite = (id: string) => {
     setFavorites((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login' as any);
   };
 
   return (
@@ -127,7 +175,11 @@ export default function HomeScreen() {
         {/* ========================================================= */}
         <View style={styles.header}>
           {/* Isotipo con fondo turquesa oficial */}
-          <TouchableOpacity style={styles.logoWrapper} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.logoWrapper}
+            activeOpacity={0.8}
+            onPress={() => setActiveTab('home')}
+          >
             <IsotipoConFondo width={38} height={38} />
           </TouchableOpacity>
 
@@ -161,158 +213,296 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.avatarCircle}
+              style={[
+                styles.avatarCircle,
+                activeTab === 'profile' && styles.avatarCircleActive,
+              ]}
               onPress={() => setActiveTab('profile')}
               activeOpacity={0.7}
-            />
+            >
+              {userAvatar ? (
+                <Image source={{ uri: userAvatar }} style={styles.headerAvatarImg} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitial}>
+                    {userName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* ========================================================= */}
-        {/* 2. CONTENIDO PRINCIPAL (SCROLL VERTICAL) */}
+        {/* 2. CONTENIDO PRINCIPAL (CONDICIONAL: HOME vs PERFIL)      */}
         {/* ========================================================= */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Banner Publicitario Superior */}
-          <View style={styles.bannerContainer}>
-            <View style={styles.bannerPlaceholder}>
-              <View style={styles.bannerBadge}>
-                <Text style={styles.bannerBadgeText}>DESTACADO</Text>
-              </View>
-              <Text style={styles.bannerTitle}>Comprá y vendé cerca tuyo</Text>
-              <Text style={styles.bannerSubtitle}>Miles de productos en Pilar y alrededores</Text>
-            </View>
-          </View>
-
-          {/* Sección de Categorías con Iconos SVG */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Categorias</Text>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => setCategoriesModalVisible(true)}>
-              <Text style={styles.moreCategoriesText}>Más categorias</Text>
-            </TouchableOpacity>
-          </View>
-
+        {activeTab === 'profile' ? (
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesScroll}
+            style={styles.scroll}
+            contentContainerStyle={styles.profileScrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            {CATEGORIES.map((cat) => {
-              const Icon = cat.IconComponent;
-              return (
-                <TouchableOpacity key={cat.id} style={styles.categoryItem} activeOpacity={0.75}>
-                  <View style={styles.categoryCircle}>
-                    <Icon width={28} height={28} />
+            {/* Cabecera de Perfil de Usuario */}
+            <View style={styles.profileHeaderCard}>
+              <View style={styles.profileAvatarWrapper}>
+                {userAvatar ? (
+                  <Image source={{ uri: userAvatar }} style={styles.profileAvatarImage} />
+                ) : (
+                  <View style={styles.profileAvatarDefault}>
+                    <Text style={styles.profileAvatarDefaultText}>
+                      {userName.charAt(0).toUpperCase()}
+                    </Text>
                   </View>
-                  <Text style={styles.categoryName} numberOfLines={2}>
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                )}
+              </View>
 
-          {/* Sección: Cerca de donde estás - Pilar */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleWithLocation}>
-              <Text style={styles.sectionTitle}>Cerca de donde estás</Text>
-              <View style={styles.locationBadge}>
-                <Ionicons name="location-sharp" size={12} color="#1DE9B6" />
-                <Text style={styles.locationBadgeText}>Pilar</Text>
+              <Text style={styles.profileUserName}>{userName}</Text>
+
+              {/* 5 Estrellas de Calificación */}
+              <View style={styles.profileRatingRow}>
+                <EstrellaIcon width={17} height={17} />
+                <EstrellaIcon width={17} height={17} />
+                <EstrellaIcon width={17} height={17} />
+                <EstrellaIcon width={17} height={17} />
+                <EstrellaIcon width={17} height={17} />
+                <Text style={styles.profileRatingCount}>(1)</Text>
+              </View>
+
+              <Text style={styles.profileMemberSince}>En soltapp desde {userYear}</Text>
+            </View>
+
+            {/* SECCIÓN: CATÁLOGO */}
+            <View style={styles.profileSection}>
+              <Text style={styles.profileSectionTitle}>CATÁLOGO</Text>
+              <View style={styles.profileMenuCard}>
+                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
+                  <View style={styles.profileMenuItemLeft}>
+                    <ProductoIcon width={22} height={22} />
+                    <Text style={styles.profileMenuItemText}>Productos</Text>
+                  </View>
+                  <SiguienteIcon width={14} height={14} />
+                </TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>Ver más</Text>
-            </TouchableOpacity>
-          </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalProductsScroll}
-          >
-            {NEARBY_PRODUCTS.map((prod) => {
-              const isFav = favorites.includes(prod.id);
-              return (
-                <TouchableOpacity key={prod.id} style={styles.horizontalCard} activeOpacity={0.85}>
-                  <View style={styles.imageContainer}>
-                    <Image source={{ uri: prod.image }} style={styles.productImage} />
-                    <TouchableOpacity
-                      style={styles.favoriteButton}
-                      onPress={() => toggleFavorite(prod.id)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons
-                        name={isFav ? 'heart' : 'heart-outline'}
-                        size={18}
-                        color={isFav ? '#EF4444' : '#1F232E'}
-                      />
-                    </TouchableOpacity>
+            {/* SECCIÓN: TRANSACCIONES */}
+            <View style={styles.profileSection}>
+              <Text style={styles.profileSectionTitle}>TRANSACCIONES</Text>
+              <View style={styles.profileMenuCard}>
+                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
+                  <View style={styles.profileMenuItemLeft}>
+                    <ComprasIcon width={22} height={22} />
+                    <Text style={styles.profileMenuItemText}>Compras</Text>
                   </View>
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.productPrice}>{prod.price}</Text>
-                    <Text style={styles.productTitle} numberOfLines={2}>
-                      {prod.title}
-                    </Text>
-                    <View style={styles.productFooter}>
-                      <Ionicons name="location-outline" size={12} color="#9098B1" />
-                      <Text style={styles.productLocation} numberOfLines={1}>
-                        {prod.location}
-                      </Text>
-                    </View>
-                  </View>
+                  <SiguienteIcon width={14} height={14} />
                 </TouchableOpacity>
-              );
-            })}
+
+                <View style={styles.profileMenuDivider} />
+
+                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
+                  <View style={styles.profileMenuItemLeft}>
+                    <VentasIcon width={22} height={22} />
+                    <Text style={styles.profileMenuItemText}>Ventas</Text>
+                  </View>
+                  <SiguienteIcon width={14} height={14} />
+                </TouchableOpacity>
+
+                <View style={styles.profileMenuDivider} />
+
+                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
+                  <View style={styles.profileMenuItemLeft}>
+                    <BilleteraIcon width={22} height={22} />
+                    <Text style={styles.profileMenuItemText}>Billetera</Text>
+                  </View>
+                  <SiguienteIcon width={14} height={14} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* SECCIÓN: CUENTA */}
+            <View style={styles.profileSection}>
+              <Text style={styles.profileSectionTitle}>CUENTA</Text>
+              <View style={styles.profileMenuCard}>
+                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
+                  <View style={styles.profileMenuItemLeft}>
+                    <ConfiguracionIcon width={22} height={22} />
+                    <Text style={styles.profileMenuItemText}>Ajustes</Text>
+                  </View>
+                  <SiguienteIcon width={14} height={14} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* SECCIÓN: OTROS */}
+            <View style={styles.profileSection}>
+              <Text style={styles.profileSectionTitle}>OTROS</Text>
+              <View style={styles.profileMenuCard}>
+                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
+                  <View style={styles.profileMenuItemLeft}>
+                    <PreguntaIcon width={22} height={22} />
+                    <Text style={styles.profileMenuItemText}>¿Necesitas ayuda?</Text>
+                  </View>
+                  <SiguienteIcon width={14} height={14} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Botón Cerrar Sesión */}
+            <View style={styles.logoutContainer}>
+              <TouchableOpacity
+                style={styles.logoutButton}
+                onPress={handleLogout}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="log-out-outline" size={18} color="#EF4444" style={styles.logoutIcon} />
+                <Text style={styles.logoutButtonText}>Cerrar sesión</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
+        ) : (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Banner Publicitario Superior */}
+            <View style={styles.bannerContainer}>
+              <View style={styles.bannerPlaceholder}>
+                <View style={styles.bannerBadge}>
+                  <Text style={styles.bannerBadgeText}>DESTACADO</Text>
+                </View>
+                <Text style={styles.bannerTitle}>Comprá y vendé cerca tuyo</Text>
+                <Text style={styles.bannerSubtitle}>Miles de productos en Pilar y alrededores</Text>
+              </View>
+            </View>
 
-          {/* Sección: Lo recién publicado */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Lo recién publicado</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>Ver todo</Text>
-            </TouchableOpacity>
-          </View>
+            {/* Sección de Categorías con Iconos SVG */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Categorias</Text>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => setCategoriesModalVisible(true)}>
+                <Text style={styles.moreCategoriesText}>Más categorias</Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.gridContainer}>
-            {RECENT_PRODUCTS.map((prod) => {
-              const isFav = favorites.includes(prod.id);
-              return (
-                <TouchableOpacity key={prod.id} style={styles.gridCard} activeOpacity={0.85}>
-                  <View style={styles.gridImageContainer}>
-                    <Image source={{ uri: prod.image }} style={styles.productImage} />
-                    <TouchableOpacity
-                      style={styles.favoriteButton}
-                      onPress={() => toggleFavorite(prod.id)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons
-                        name={isFav ? 'heart' : 'heart-outline'}
-                        size={18}
-                        color={isFav ? '#EF4444' : '#1F232E'}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.gridCardInfo}>
-                    <Text style={styles.productPrice}>{prod.price}</Text>
-                    <Text style={styles.productTitle} numberOfLines={2}>
-                      {prod.title}
-                    </Text>
-                    <View style={styles.productFooter}>
-                      <Ionicons name="location-outline" size={12} color="#9098B1" />
-                      <Text style={styles.productLocation} numberOfLines={1}>
-                        {prod.location}
-                      </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesScroll}
+            >
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.IconComponent;
+                return (
+                  <TouchableOpacity key={cat.id} style={styles.categoryItem} activeOpacity={0.75}>
+                    <View style={styles.categoryCircle}>
+                      <Icon width={28} height={28} />
                     </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
+                    <Text style={styles.categoryName} numberOfLines={2}>
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Sección: Cerca de donde estás - Pilar */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleWithLocation}>
+                <Text style={styles.sectionTitle}>Cerca de donde estás</Text>
+                <View style={styles.locationBadge}>
+                  <Ionicons name="location-sharp" size={12} color="#1DE9B6" />
+                  <Text style={styles.locationBadgeText}>Pilar</Text>
+                </View>
+              </View>
+              <TouchableOpacity>
+                <Text style={styles.seeAllText}>Ver más</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalProductsScroll}
+            >
+              {NEARBY_PRODUCTS.map((prod) => {
+                const isFav = favorites.includes(prod.id);
+                return (
+                  <TouchableOpacity key={prod.id} style={styles.horizontalCard} activeOpacity={0.85}>
+                    <View style={styles.imageContainer}>
+                      <Image source={{ uri: prod.image }} style={styles.productImage} />
+                      <TouchableOpacity
+                        style={styles.favoriteButton}
+                        onPress={() => toggleFavorite(prod.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={isFav ? 'heart' : 'heart-outline'}
+                          size={18}
+                          color={isFav ? '#EF4444' : '#1F232E'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.productPrice}>{prod.price}</Text>
+                      <Text style={styles.productTitle} numberOfLines={2}>
+                        {prod.title}
+                      </Text>
+                      <View style={styles.productFooter}>
+                        <Ionicons name="location-outline" size={12} color="#9098B1" />
+                        <Text style={styles.productLocation} numberOfLines={1}>
+                          {prod.location}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Sección: Lo recién publicado */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Lo recién publicado</Text>
+              <TouchableOpacity>
+                <Text style={styles.seeAllText}>Ver todo</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.gridContainer}>
+              {RECENT_PRODUCTS.map((prod) => {
+                const isFav = favorites.includes(prod.id);
+                return (
+                  <TouchableOpacity key={prod.id} style={styles.gridCard} activeOpacity={0.85}>
+                    <View style={styles.gridImageContainer}>
+                      <Image source={{ uri: prod.image }} style={styles.productImage} />
+                      <TouchableOpacity
+                        style={styles.favoriteButton}
+                        onPress={() => toggleFavorite(prod.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={isFav ? 'heart' : 'heart-outline'}
+                          size={18}
+                          color={isFav ? '#EF4444' : '#1F232E'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.gridCardInfo}>
+                      <Text style={styles.productPrice}>{prod.price}</Text>
+                      <Text style={styles.productTitle} numberOfLines={2}>
+                        {prod.title}
+                      </Text>
+                      <View style={styles.productFooter}>
+                        <Ionicons name="location-outline" size={12} color="#9098B1" />
+                        <Text style={styles.productLocation} numberOfLines={1}>
+                          {prod.location}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+        )}
 
         {/* ========================================================= */}
         {/* 3. BARRA DE NAVEGACIÓN INFERIOR (Exacto al diseño) */}
@@ -484,6 +674,33 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: '#D9D9D9',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  avatarCircleActive: {
+    borderColor: PRIMARY_COLOR,
+    borderWidth: 2,
+  },
+  headerAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  avatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#D9D9D9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
   },
 
   // 2. Contenido Scrollable
@@ -492,6 +709,152 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 95,
+  },
+
+  // ==========================================
+  // ESTILOS PANTALLA DE PERFIL (Figma exacto)
+  // ==========================================
+  profileScrollContent: {
+    paddingBottom: 100,
+    paddingTop: 10,
+  },
+  profileHeaderCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  profileAvatarWrapper: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#D9D9D9',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  profileAvatarImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+  },
+  profileAvatarDefault: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#D9D9D9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileAvatarDefaultText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  profileUserName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: TEXT_DARK,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  profileRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    marginBottom: 6,
+  },
+  profileRatingCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: TEXT_DARK,
+    marginLeft: 4,
+  },
+  profileMemberSince: {
+    fontSize: 13,
+    color: '#9098B1',
+    fontWeight: '400',
+  },
+
+  // Secciones de Perfil
+  profileSection: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+  },
+  profileSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9098B1',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  profileMenuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  profileMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  profileMenuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  profileMenuItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: TEXT_DARK,
+  },
+  profileMenuDivider: {
+    height: 1,
+    backgroundColor: '#F8FAFC',
+    marginLeft: 52,
+  },
+
+  // Logout
+  logoutContainer: {
+    marginTop: 26,
+    paddingHorizontal: 16,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 8,
+  },
+  logoutIcon: {
+    marginRight: 2,
+  },
+  logoutButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#DC2626',
   },
 
   // Banner

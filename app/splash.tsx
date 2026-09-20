@@ -1,5 +1,5 @@
 import LoadingSplashScreen from '@/src/screens/LoadingSplashScreen';
 
-export default function Index() {
+export default function SplashScreenRoute() {
   return <LoadingSplashScreen />;
 }

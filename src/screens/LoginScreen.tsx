@@ -35,7 +35,6 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState<boolean>(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showRegisterLink, setShowRegisterLink] = useState<boolean>(false);
 
   // Validación de formato de correo con expresión regular (RegEx)
   const isValidEmail = (emailStr: string): boolean => {
@@ -46,19 +45,16 @@ export default function LoginScreen() {
   // Inicio de sesión con Email y Contraseña (Supabase)
   const handleLogin = async () => {
     setErrorMessage(null);
-    setShowRegisterLink(false);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
       setErrorMessage('Por favor completa todos los campos.');
-      setShowRegisterLink(false);
       return;
     }
 
     // 1. Validación de formato de correo (Regex)
     if (!isValidEmail(trimmedEmail)) {
       setErrorMessage('El correo es inválido');
-      setShowRegisterLink(false);
       return;
     }
 
@@ -97,7 +93,6 @@ export default function LoginScreen() {
       // Si la consulta a la base de datos confirmó que el correo NO existe
       if (checkedViaTable && !emailExists) {
         setErrorMessage('El correo no está registrado');
-        setShowRegisterLink(true);
         setLoading(false);
         return;
       }
@@ -115,15 +110,13 @@ export default function LoginScreen() {
         
         // Caso 1: Error explícito de contraseña incorrecta
         if (
-          (checkedViaTable && emailExists) ||
           errorMsg.includes('wrong password') ||
           errorMsg.includes('invalid password') ||
           errorMsg.includes('incorrect password')
         ) {
           setErrorMessage('La contraseña es incorrecta');
-          setShowRegisterLink(false);
         }
-        // Caso 2: Usuario / Correo no registrado (o credenciales no encontradas en el sistema)
+        // Caso 2: Usuario / Correo no registrado
         else if (
           errorMsg.includes('user not found') ||
           errorMsg.includes('not registered') ||
@@ -131,7 +124,12 @@ export default function LoginScreen() {
           errorMsg.includes('no user') ||
           errorMsg.includes('email not found') ||
           errorCode === 'user_not_found' ||
-          errorCode === 'user_not_registered' ||
+          errorCode === 'user_not_registered'
+        ) {
+          setErrorMessage('El correo no está registrado');
+        } 
+        // Caso 3: Credenciales inválidas (contraseña errónea o usuario registrado con Google/Facebook OAuth sin password)
+        else if (
           errorMsg.includes('invalid login credentials') ||
           errorMsg.includes('invalid_grant') ||
           errorMsg.includes('invalid credentials') ||
@@ -140,42 +138,36 @@ export default function LoginScreen() {
           status === 401 ||
           status === 400
         ) {
-          setErrorMessage('El correo no está registrado');
-          setShowRegisterLink(true);
+          setErrorMessage('Usuario o contraseña incorrectos. Si te registraste con otro método, iniciá sesión con Google o Facebook.');
         } 
-        // Caso 3: Email aún no confirmado
+        // Caso 4: Email aún no confirmado
         else if (
           errorMsg.includes('email not confirmed') ||
           errorMsg.includes('email_not_confirmed') ||
           errorCode === 'email_not_confirmed'
         ) {
           setErrorMessage('El correo electrónico aún no ha sido confirmado. Por favor verifica tu bandeja de entrada.');
-          setShowRegisterLink(false);
         } 
-        // Caso 4: Límite de intentos (Rate limit)
+        // Caso 5: Límite de intentos (Rate limit)
         else if (
           errorMsg.includes('rate limit') ||
           errorMsg.includes('too many requests') ||
           status === 429
         ) {
           setErrorMessage('Demasiados intentos. Espera unos minutos.');
-          setShowRegisterLink(false);
         } 
         // Caso por defecto
         else {
-          setErrorMessage('El correo no está registrado');
-          setShowRegisterLink(true);
+          setErrorMessage('Usuario o contraseña incorrectos. Si te registraste con otro método, iniciá sesión con Google o Facebook.');
         }
       } else if (data?.session) {
         // Redirección exitosa
         router.replace('/home' as any);
       } else {
-        setErrorMessage('El correo no está registrado');
-        setShowRegisterLink(true);
+        setErrorMessage('Usuario o contraseña incorrectos. Si te registraste con otro método, iniciá sesión con Google o Facebook.');
       }
     } catch (err) {
       setErrorMessage('Ocurrió un error de conexión. Inténtalo de nuevo.');
-      setShowRegisterLink(false);
     } finally {
       setLoading(false);
     }
@@ -229,7 +221,7 @@ export default function LoginScreen() {
           if (code) {
             const { error: codeError } = await supabase.auth.exchangeCodeForSession(code);
             if (codeError) throw codeError;
-            Alert.alert('¡Éxito!', `Has iniciado sesión con ${provider === 'google' ? 'Google' : 'Facebook'}.`);
+            router.replace('/home' as any);
             return;
           }
 
@@ -244,13 +236,13 @@ export default function LoginScreen() {
             });
 
             if (sessionError) throw sessionError;
-
-            Alert.alert('¡Éxito!', `Has iniciado sesión con ${provider === 'google' ? 'Google' : 'Facebook'}.`);
+            router.replace('/home' as any);
+            return;
           }
         }
       }
     } catch (err: any) {
-      Alert.alert('Error de autenticación', err.message || `No se pudo autenticar con ${provider}.`);
+      setErrorMessage(err.message || `No se pudo autenticar con ${provider}.`);
     } finally {
       setSocialLoading(null);
     }
@@ -302,10 +294,7 @@ export default function LoginScreen() {
                   value={email}
                   onChangeText={(text) => {
                     setEmail(text);
-                    if (errorMessage) {
-                      setErrorMessage(null);
-                      setShowRegisterLink(false);
-                    }
+                    if (errorMessage) setErrorMessage(null);
                   }}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -329,10 +318,7 @@ export default function LoginScreen() {
                   value={password}
                   onChangeText={(text) => {
                     setPassword(text);
-                    if (errorMessage) {
-                      setErrorMessage(null);
-                      setShowRegisterLink(false);
-                    }
+                    if (errorMessage) setErrorMessage(null);
                   }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -355,12 +341,7 @@ export default function LoginScreen() {
                 <View style={styles.errorContainer}>
                   <Feather name="alert-circle" size={17} color="#E11D48" style={styles.errorIcon} />
                   <View style={styles.errorTextContainer}>
-                    <Text style={styles.errorText}>{errorMessage}{showRegisterLink ? ' ' : ''}</Text>
-                    {showRegisterLink && (
-                      <TouchableOpacity onPress={() => router.push('/register' as any)} activeOpacity={0.7}>
-                        <Text style={styles.errorLink}>¿Querés registrarte?</Text>
-                      </TouchableOpacity>
-                    )}
+                    <Text style={styles.errorText}>{errorMessage}</Text>
                   </View>
                 </View>
               )}
