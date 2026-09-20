@@ -20,9 +20,9 @@ import { supabase } from '../supabase';
 import { getAuthRedirectUri } from '../utils/auth';
 
 // Componentes SVG vectoriales oficiales
-import LogoSoltapp from '../../assets/svgs/logo_soltapp.svg';
-import GoogleIcon from '../../assets/svgs/google_icon.svg';
-import FacebookIcon from '../../assets/svgs/facebook_icon.svg';
+import LogoSoltapp from '../../assets/svgs/logotipo color.svg';
+import GoogleIcon from '../../assets/svgs/Google.svg';
+import FacebookIcon from '../../assets/svgs/Facebook.svg';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -51,7 +51,7 @@ export default function LoginScreen() {
 
       if (error) throw error;
 
-      Alert.alert('¡Bienvenido!', `Has iniciado sesión correctamente como ${data.user?.email || email}`);
+      router.push('/home' as any);
     } catch (err: any) {
       Alert.alert('Error al ingresar', err.message || 'Verifica tus credenciales.');
     } finally {

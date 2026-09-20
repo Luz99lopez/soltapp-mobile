@@ -11,15 +11,18 @@ import {
   ScrollView,
   Alert,
   StatusBar,
-  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { supabase } from '../supabase';
+
+// Logotipo SVG oficial de Soltapp
+import LogoSoltapp from '../../assets/svgs/logotipo color.svg';
 
 export default function RegisterScreen() {
   const router = useRouter();
 
-  const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
@@ -27,35 +30,122 @@ export default function RegisterScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const handleRegister = () => {
-    if (!fullName.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-      Alert.alert('Campos incompletos', 'Por favor llena todos los campos para continuar.');
+  // Validación de formato de correo con expresión regular (RegEx)
+  const isValidEmail = (emailStr: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(emailStr);
+  };
+
+  // Validación de complejidad de contraseña (8+ caracteres, mayúscula, minúscula, número y carácter especial)
+  const validatePasswordComplexity = (pass: string): { isValid: boolean; message?: string } => {
+    if (pass.length < 8) {
+      return { isValid: false, message: 'La contraseña debe tener al menos 8 caracteres.' };
+    }
+    if (!/[A-Z]/.test(pass)) {
+      return { isValid: false, message: 'La contraseña debe contener al menos una letra mayúscula.' };
+    }
+    if (!/[a-z]/.test(pass)) {
+      return { isValid: false, message: 'La contraseña debe contener al menos una letra minúscula.' };
+    }
+    if (!/\d/.test(pass)) {
+      return { isValid: false, message: 'La contraseña debe contener al menos un número.' };
+    }
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(pass)) {
+      return { isValid: false, message: 'La contraseña debe contener al menos un carácter especial (ej: !@#$%&*).' };
+    }
+    return { isValid: true };
+  };
+
+  // Mapeo de errores comunes de Supabase a mensajes claros en español
+  const getFriendlyErrorMessage = (errorMsg: string): string => {
+    const msg = errorMsg.toLowerCase();
+    if (
+      msg.includes('user already registered') ||
+      msg.includes('already registered') ||
+      msg.includes('user_already_exists')
+    ) {
+      return 'Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.';
+    }
+    if (msg.includes('invalid email') || msg.includes('email address is invalid')) {
+      return 'El formato del correo electrónico ingresado no es válido.';
+    }
+    if (msg.includes('rate limit') || msg.includes('too many requests')) {
+      return 'Has realizado demasiados intentos. Por favor espera unos minutos antes de volver a intentar.';
+    }
+    if (msg.includes('password should be at least')) {
+      return 'La contraseña no cumple con la longitud mínima requerida por el sistema.';
+    }
+    return errorMsg || 'Ocurrió un error al intentar crear la cuenta.';
+  };
+
+  // Lógica de registro y validaciones
+  const handleRegister = async () => {
+    const trimmedEmail = email.trim();
+
+    // 1. Validar campos obligatorios
+    if (!trimmedEmail || !password || !confirmPassword) {
+      Alert.alert('Campos incompletos', 'Por favor completa todos los campos para continuar.');
       return;
     }
 
+    // 2. Validar formato de correo electrónico
+    if (!isValidEmail(trimmedEmail)) {
+      Alert.alert(
+        'Correo inválido',
+        'Por favor ingresa una dirección de correo electrónico válida (ej: usuario@ejemplo.com).'
+      );
+      return;
+    }
+
+    // 3. Validar robustez de la contraseña
+    const passwordCheck = validatePasswordComplexity(password);
+    if (!passwordCheck.isValid) {
+      Alert.alert('Contraseña débil', passwordCheck.message);
+      return;
+    }
+
+    // 4. Validar coincidencia de contraseñas
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Las contraseñas no coinciden.');
+      Alert.alert('Contraseñas no coinciden', 'Las contraseñas ingresadas no coinciden. Por favor verifícalas.');
       return;
     }
 
-    setLoading(true);
-    setTimeout(() => {
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password: password,
+      });
+
+      if (error) {
+        Alert.alert('Error en el registro', getFriendlyErrorMessage(error.message));
+        return;
+      }
+
+      // Si Supabase devuelve sesión activa directamente
+      if (data?.session) {
+        Alert.alert('¡Registro exitoso!', 'Tu cuenta ha sido creada e iniciada correctamente.', [
+          { text: 'Comenzar', onPress: () => router.push('/home' as any) },
+        ]);
+      } else {
+        // Si se requiere confirmación por email
+        Alert.alert(
+          '¡Cuenta creada con éxito!',
+          'Hemos enviado un correo de confirmación a tu dirección. Por favor verifica tu bandeja de entrada antes de iniciar sesión.',
+          [
+            {
+              text: 'Ir a Iniciar Sesión',
+              onPress: () => router.push('/login' as any),
+            },
+          ]
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Error inesperado', getFriendlyErrorMessage(err?.message || ''));
+    } finally {
       setLoading(false);
-      Alert.alert('¡Registro exitoso!', `Bienvenido a Soltapp, ${fullName}.`, [
-        {
-          text: 'Continuar',
-          onPress: () => router.push('/login' as any),
-        },
-      ]);
-    }, 1000);
-  };
-
-  const handleGoogleSignup = () => {
-    Alert.alert('Google Auth', 'Iniciando registro con Google...');
-  };
-
-  const handleFacebookSignup = () => {
-    Alert.alert('Facebook Auth', 'Iniciando registro con Facebook...');
+    }
   };
 
   const handleGoToLogin = () => {
@@ -77,41 +167,19 @@ export default function RegisterScreen() {
           <View style={styles.contentWrapper}>
             {/* Logo de Soltapp */}
             <View style={styles.logoContainer}>
-              <Image
-                source={require('../../assets/images/logotipo.png')}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
+              <LogoSoltapp width={130} height={118} />
             </View>
 
             {/* Título */}
-            <Text style={styles.headingTitle}>Creá tu cuenta</Text>
+            <Text style={styles.headingTitle}>Crear una nueva cuenta</Text>
 
             {/* Formulario */}
             <View style={styles.form}>
-              {/* Input Nombre Completo */}
-              <View style={styles.inputContainer}>
-                <Feather
-                  name="user"
-                  size={18}
-                  color="#9098B1"
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Nombre completo"
-                  placeholderTextColor="#9098B1"
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                />
-              </View>
-
-              {/* Input Email */}
+              {/* Input 1: Email */}
               <View style={styles.inputContainer}>
                 <Feather
                   name="mail"
-                  size={18}
+                  size={19}
                   color="#9098B1"
                   style={styles.inputIcon}
                 />
@@ -124,14 +192,15 @@ export default function RegisterScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  editable={!loading}
                 />
               </View>
 
-              {/* Input Contraseña */}
+              {/* Input 2: Contraseña */}
               <View style={styles.inputContainer}>
                 <Feather
                   name="lock"
-                  size={18}
+                  size={19}
                   color="#9098B1"
                   style={styles.inputIcon}
                 />
@@ -143,10 +212,12 @@ export default function RegisterScreen() {
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  disabled={loading}
                 >
                   <Feather
                     name={showPassword ? 'eye' : 'eye-off'}
@@ -156,26 +227,28 @@ export default function RegisterScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Input Confirmar Contraseña */}
+              {/* Input 3: Repetir contraseña */}
               <View style={styles.inputContainer}>
                 <Feather
                   name="lock"
-                  size={18}
+                  size={19}
                   color="#9098B1"
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="Confirmar contraseña"
+                  placeholder="Repetir contraseña"
                   placeholderTextColor="#9098B1"
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
+                  editable={!loading}
                 />
                 <TouchableOpacity
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  disabled={loading}
                 >
                   <Feather
                     name={showConfirmPassword ? 'eye' : 'eye-off'}
@@ -185,66 +258,26 @@ export default function RegisterScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Botón Principal "Registrate" */}
+              {/* Botón Principal "Registrar" */}
               <TouchableOpacity
                 style={[styles.primaryButton, loading && styles.buttonDisabled]}
                 onPress={handleRegister}
                 activeOpacity={0.85}
                 disabled={loading}
               >
-                <Text style={styles.primaryButtonText}>
-                  {loading ? 'Registrando...' : 'Registrate'}
-                </Text>
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Registrar</Text>
+                )}
               </TouchableOpacity>
             </View>
 
-            {/* Divisor con la "o" */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <View style={styles.dividerCircle}>
-                <Text style={styles.dividerText}>o</Text>
-              </View>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Botones Sociales */}
-            <View style={styles.socialButtonsContainer}>
-              {/* Google */}
-              <TouchableOpacity
-                style={styles.socialButton}
-                onPress={handleGoogleSignup}
-                activeOpacity={0.7}
-              >
-                <Feather
-                  name="globe"
-                  size={18}
-                  color="#EA4335"
-                  style={styles.socialIcon}
-                />
-                <Text style={styles.socialButtonText}>Registrate con google</Text>
-              </TouchableOpacity>
-
-              {/* Facebook */}
-              <TouchableOpacity
-                style={styles.socialButton}
-                onPress={handleFacebookSignup}
-                activeOpacity={0.7}
-              >
-                <Feather
-                  name="facebook"
-                  size={18}
-                  color="#4092FF"
-                  style={styles.socialIcon}
-                />
-                <Text style={styles.socialButtonText}>Registrate con Facebook</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Enlace al Login */}
+            {/* Enlace inferior para volver al Login */}
             <View style={styles.footerContainer}>
               <View style={styles.loginRow}>
-                <Text style={styles.loginLabel}>¿Ya tenés una cuenta?. </Text>
-                <TouchableOpacity onPress={handleGoToLogin} activeOpacity={0.7}>
+                <Text style={styles.loginLabel}>¿Tenés una cuenta? </Text>
+                <TouchableOpacity onPress={handleGoToLogin} activeOpacity={0.7} disabled={loading}>
                   <Text style={styles.loginLink}>Ingresá</Text>
                 </TouchableOpacity>
               </View>
@@ -256,10 +289,9 @@ export default function RegisterScreen() {
   );
 }
 
-const PRIMARY_TEAL = '#3BD7C2';
-const TEXT_NAVY = '#1F232E';
-const BORDER_NEUTRAL = '#9098B1';
-const INPUT_BG = '#F9FAFB';
+const PRIMARY_COLOR = '#1DE9B6'; // Color turquesa oficial de Soltapp
+const TEXT_DARK = '#1F232E';
+const BORDER_COLOR = '#EBF0F5';
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -287,32 +319,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
-    height: 125,
-  },
-  logoImage: {
-    width: 140,
-    height: 125,
-    resizeMode: 'contain',
+    height: 120,
   },
   // Heading
   headingTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: TEXT_NAVY,
+    color: TEXT_DARK,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 26,
   },
   // Form Inputs
   form: {
     gap: 14,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: INPUT_BG,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#EBF0F5',
+    borderColor: BORDER_COLOR,
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 50,
@@ -324,18 +351,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: 'normal',
-    color: TEXT_NAVY,
+    color: TEXT_DARK,
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' as any } : {}),
   },
   // Primary Button
   primaryButton: {
-    backgroundColor: PRIMARY_TEAL,
+    backgroundColor: PRIMARY_COLOR,
     borderRadius: 12,
     height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
-    shadowColor: PRIMARY_TEAL,
+    marginTop: 8,
+    shadowColor: PRIMARY_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
     shadowRadius: 8,
@@ -349,65 +376,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
-  // Divider
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 18,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#EBF0F5',
-  },
-  dividerCircle: {
-    paddingHorizontal: 14,
-  },
-  dividerText: {
-    fontSize: 14,
-    color: BORDER_NEUTRAL,
-    fontWeight: '600',
-  },
-  // Social Buttons
-  socialButtonsContainer: {
-    gap: 12,
-    marginBottom: 26,
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EBF0F5',
-    borderRadius: 12,
-    height: 50,
-    paddingHorizontal: 16,
-  },
-  socialIcon: {
-    marginRight: 10,
-  },
-  socialButtonText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#64748B',
-  },
   // Footer Links
   footerContainer: {
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 10,
   },
   loginRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   loginLabel: {
-    fontSize: 13.5,
+    fontSize: 14,
     color: '#8A97A6',
   },
   loginLink: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: PRIMARY_TEAL,
+    color: PRIMARY_COLOR,
   },
 });
