@@ -424,7 +424,7 @@ export default function ProfileScreen() {
             {/* Buzón */}
             <TouchableOpacity
               style={styles.navItem}
-              onPress={() => router.push('/home' as any)}
+              onPress={() => router.push('/home?tab=inbox' as any)}
               activeOpacity={0.7}
             >
               <MailIcon width={24} height={24} stroke="#9098B1" />

@@ -14,9 +14,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
+import InboxView from '../components/InboxView';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
 import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
@@ -118,9 +119,16 @@ const RECENT_PRODUCTS = [
 
 export default function HomeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'home' | 'favorites' | 'upload' | 'inbox' | 'profile'>('home');
+
+  useEffect(() => {
+    if (params?.tab === 'inbox') {
+      setActiveTab('inbox');
+    }
+  }, [params?.tab]);
   const [profileSubView, setProfileSubView] = useState<'edit' | 'public'>('edit');
   const [editTab, setEditTab] = useState<'perfil' | 'cuenta'>('perfil');
 
@@ -437,6 +445,22 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </ScrollView>
+        ) : activeTab === 'inbox' ? (
+          /* ========================================================= */
+          /* BANDEJA DE ENTRADA / BUZÓN (Captura Referencia)          */
+          /* ========================================================= */
+          <InboxView
+            onOpenConversation={(conv) => {
+              router.push({
+                pathname: '/chat',
+                params: {
+                  productTitle: conv.productTitle,
+                  productPrice: conv.productPrice,
+                  sellerName: conv.sellerName,
+                },
+              } as any);
+            }}
+          />
         ) : (
           <ScrollView
             style={styles.scroll}
