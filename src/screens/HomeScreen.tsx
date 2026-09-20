@@ -11,6 +11,7 @@ import {
   Platform,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -120,6 +121,16 @@ export default function HomeScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'home' | 'favorites' | 'upload' | 'inbox' | 'profile'>('home');
+  const [profileSubView, setProfileSubView] = useState<'edit' | 'public'>('edit');
+  const [editTab, setEditTab] = useState<'perfil' | 'cuenta'>('perfil');
+
+  // Campos editables de perfil
+  const [editFirstName, setEditFirstName] = useState('Manuel');
+  const [editLastName, setEditLastName] = useState('Sans');
+  const [editLocation, setEditLocation] = useState('1629, Pilar');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
   const [isGridView, setIsGridView] = useState(true);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
@@ -128,11 +139,15 @@ export default function HomeScreen() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setCurrentUser(user);
+        loadUserData(user);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setCurrentUser(session?.user ?? null);
+      if (session?.user) {
+        loadUserData(session.user);
+      }
     });
 
     return () => {
@@ -140,10 +155,28 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const loadUserData = (user: any) => {
+    const meta = user?.user_metadata || {};
+    const fullName = meta.full_name || meta.name || '';
+    if (fullName) {
+      const parts = fullName.trim().split(' ');
+      if (parts.length > 1) {
+        setEditFirstName(parts[0]);
+        setEditLastName(parts.slice(1).join(' '));
+      } else {
+        setEditFirstName(fullName);
+      }
+    }
+    if (meta.first_name) setEditFirstName(meta.first_name);
+    if (meta.last_name) setEditLastName(meta.last_name);
+    if (meta.location) setEditLocation(meta.location);
+  };
+
   const userName =
     currentUser?.user_metadata?.full_name ||
     currentUser?.user_metadata?.name ||
-    (currentUser?.email ? currentUser.email.split('@')[0] : 'Jose Luis');
+    `${editFirstName} ${editLastName}`.trim() ||
+    (currentUser?.email ? currentUser.email.split('@')[0] : 'Manuel Sans');
 
   const userAvatar =
     currentUser?.user_metadata?.avatar_url ||
@@ -163,6 +196,37 @@ export default function HomeScreen() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace('/login' as any);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      setIsSaving(true);
+      setSaveMessage(null);
+      const fullNameCombined = `${editFirstName.trim()} ${editLastName.trim()}`.trim();
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          full_name: fullNameCombined,
+          name: fullNameCombined,
+          first_name: editFirstName.trim(),
+          last_name: editLastName.trim(),
+          location: editLocation.trim(),
+        },
+      });
+
+      if (error) {
+        setSaveMessage('Error al guardar los cambios.');
+      } else {
+        if (data?.user) {
+          setCurrentUser(data.user);
+        }
+        setSaveMessage('¡Perfil guardado correctamente!');
+        setTimeout(() => setSaveMessage(null), 3000);
+      }
+    } catch (err) {
+      setSaveMessage('Error de conexión.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -217,7 +281,15 @@ export default function HomeScreen() {
                 styles.avatarCircle,
                 activeTab === 'profile' && styles.avatarCircleActive,
               ]}
-              onPress={() => setActiveTab('profile')}
+              onPress={() => {
+                if (activeTab === 'profile') {
+                  // Si ya está en el menú "Tú", ir a la pantalla de Perfil completa
+                  router.push('/profile' as any);
+                } else {
+                  // Abrir el menú "Tú"
+                  setActiveTab('profile');
+                }
+              }}
               activeOpacity={0.7}
             >
               {userAvatar ? (
@@ -234,120 +306,126 @@ export default function HomeScreen() {
         </View>
 
         {/* ========================================================= */}
-        {/* 2. CONTENIDO PRINCIPAL (CONDICIONAL: HOME vs PERFIL)      */}
+        {/* 2. CONTENIDO PRINCIPAL: FEED HOME vs MENÚ "TÚ"            */}
         {/* ========================================================= */}
         {activeTab === 'profile' ? (
+          /* ========================================================= */
+          /* MENÚ DESPLEGABLE / VISTA "TÚ" (Figma Referencia 1)       */
+          /* ========================================================= */
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={styles.profileScrollContent}
+            contentContainerStyle={styles.tuMenuScrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Cabecera de Perfil de Usuario */}
-            <View style={styles.profileHeaderCard}>
-              <View style={styles.profileAvatarWrapper}>
+            {/* Cabecera Principal del Usuario en "Tú" */}
+            <TouchableOpacity
+              style={styles.tuHeaderCard}
+              onPress={() => router.push('/profile' as any)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.tuAvatarWrapper}>
                 {userAvatar ? (
-                  <Image source={{ uri: userAvatar }} style={styles.profileAvatarImage} />
+                  <Image source={{ uri: userAvatar }} style={styles.tuAvatarImage} />
                 ) : (
-                  <View style={styles.profileAvatarDefault}>
-                    <Text style={styles.profileAvatarDefaultText}>
+                  <View style={styles.tuAvatarDefault}>
+                    <Text style={styles.tuAvatarDefaultText}>
                       {userName.charAt(0).toUpperCase()}
                     </Text>
                   </View>
                 )}
               </View>
 
-              <Text style={styles.profileUserName}>{userName}</Text>
+              <View style={styles.tuUserInfoCol}>
+                <Text style={styles.tuUserName}>{userName}</Text>
 
-              {/* 5 Estrellas de Calificación */}
-              <View style={styles.profileRatingRow}>
-                <EstrellaIcon width={17} height={17} />
-                <EstrellaIcon width={17} height={17} />
-                <EstrellaIcon width={17} height={17} />
-                <EstrellaIcon width={17} height={17} />
-                <EstrellaIcon width={17} height={17} />
-                <Text style={styles.profileRatingCount}>(1)</Text>
+                {/* 5 Estrellas Negras de Calificación */}
+                <View style={styles.tuRatingRow}>
+                  <EstrellaIcon width={16} height={16} />
+                  <EstrellaIcon width={16} height={16} />
+                  <EstrellaIcon width={16} height={16} />
+                  <EstrellaIcon width={16} height={16} />
+                  <EstrellaIcon width={16} height={16} />
+                  <Text style={styles.tuRatingCount}>(1)</Text>
+                </View>
+
+                <Text style={styles.tuMemberSince}>En soltapp desde {userYear}</Text>
               </View>
 
-              <Text style={styles.profileMemberSince}>En soltapp desde {userYear}</Text>
-            </View>
+              {/* Flecha principal de navegación a Perfil */}
+              <View style={styles.tuHeaderArrow}>
+                <SiguienteIcon width={18} height={18} />
+              </View>
+            </TouchableOpacity>
 
             {/* SECCIÓN: CATÁLOGO */}
-            <View style={styles.profileSection}>
-              <Text style={styles.profileSectionTitle}>CATÁLOGO</Text>
-              <View style={styles.profileMenuCard}>
-                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
-                  <View style={styles.profileMenuItemLeft}>
-                    <ProductoIcon width={22} height={22} />
-                    <Text style={styles.profileMenuItemText}>Productos</Text>
-                  </View>
-                  <SiguienteIcon width={14} height={14} />
-                </TouchableOpacity>
-              </View>
+            <View style={styles.tuSection}>
+              <Text style={styles.tuSectionTitle}>CATÁLOGO</Text>
+              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+                <View style={styles.tuMenuItemLeft}>
+                  <ProductoIcon width={22} height={22} />
+                  <Text style={styles.tuMenuItemText}>Productos</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
             </View>
 
             {/* SECCIÓN: TRANSACCIONES */}
-            <View style={styles.profileSection}>
-              <Text style={styles.profileSectionTitle}>TRANSACCIONES</Text>
-              <View style={styles.profileMenuCard}>
-                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
-                  <View style={styles.profileMenuItemLeft}>
-                    <ComprasIcon width={22} height={22} />
-                    <Text style={styles.profileMenuItemText}>Compras</Text>
-                  </View>
-                  <SiguienteIcon width={14} height={14} />
-                </TouchableOpacity>
+            <View style={styles.tuSection}>
+              <Text style={styles.tuSectionTitle}>TRANSACCIONES</Text>
+              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+                <View style={styles.tuMenuItemLeft}>
+                  <ComprasIcon width={22} height={22} />
+                  <Text style={styles.tuMenuItemText}>Compras</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
 
-                <View style={styles.profileMenuDivider} />
+              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+                <View style={styles.tuMenuItemLeft}>
+                  <VentasIcon width={22} height={22} />
+                  <Text style={styles.tuMenuItemText}>Ventas</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
 
-                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
-                  <View style={styles.profileMenuItemLeft}>
-                    <VentasIcon width={22} height={22} />
-                    <Text style={styles.profileMenuItemText}>Ventas</Text>
-                  </View>
-                  <SiguienteIcon width={14} height={14} />
-                </TouchableOpacity>
-
-                <View style={styles.profileMenuDivider} />
-
-                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
-                  <View style={styles.profileMenuItemLeft}>
-                    <BilleteraIcon width={22} height={22} />
-                    <Text style={styles.profileMenuItemText}>Billetera</Text>
-                  </View>
-                  <SiguienteIcon width={14} height={14} />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+                <View style={styles.tuMenuItemLeft}>
+                  <BilleteraIcon width={22} height={22} />
+                  <Text style={styles.tuMenuItemText}>Billetera</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
             </View>
 
             {/* SECCIÓN: CUENTA */}
-            <View style={styles.profileSection}>
-              <Text style={styles.profileSectionTitle}>CUENTA</Text>
-              <View style={styles.profileMenuCard}>
-                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
-                  <View style={styles.profileMenuItemLeft}>
-                    <ConfiguracionIcon width={22} height={22} />
-                    <Text style={styles.profileMenuItemText}>Ajustes</Text>
-                  </View>
-                  <SiguienteIcon width={14} height={14} />
-                </TouchableOpacity>
-              </View>
+            <View style={styles.tuSection}>
+              <Text style={styles.tuSectionTitle}>CUENTA</Text>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={() => router.push('/profile' as any)}
+              >
+                <View style={styles.tuMenuItemLeft}>
+                  <ConfiguracionIcon width={22} height={22} />
+                  <Text style={styles.tuMenuItemText}>Ajustes</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
             </View>
 
             {/* SECCIÓN: OTROS */}
-            <View style={styles.profileSection}>
-              <Text style={styles.profileSectionTitle}>OTROS</Text>
-              <View style={styles.profileMenuCard}>
-                <TouchableOpacity style={styles.profileMenuItem} activeOpacity={0.7}>
-                  <View style={styles.profileMenuItemLeft}>
-                    <PreguntaIcon width={22} height={22} />
-                    <Text style={styles.profileMenuItemText}>¿Necesitas ayuda?</Text>
-                  </View>
-                  <SiguienteIcon width={14} height={14} />
-                </TouchableOpacity>
-              </View>
+            <View style={styles.tuSection}>
+              <Text style={styles.tuSectionTitle}>OTROS</Text>
+              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+                <View style={styles.tuMenuItemLeft}>
+                  <PreguntaIcon width={22} height={22} />
+                  <Text style={styles.tuMenuItemText}>¿Necesitas ayuda?</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
             </View>
 
-            {/* Botón Cerrar Sesión */}
+            {/* Cerrar Sesión */}
             <View style={styles.logoutContainer}>
               <TouchableOpacity
                 style={styles.logoutButton}
@@ -595,8 +673,12 @@ export default function HomeScreen() {
         <CategoriesMenuModal
           visible={categoriesModalVisible}
           onClose={() => setCategoriesModalVisible(false)}
+          userAvatar={userAvatar}
+          userName={userName}
+          onAvatarPress={() => {
+            setActiveTab('profile');
+          }}
           onSelectCategory={(category) => {
-            // Manejador de selección de categoría
             setCategoriesModalVisible(false);
           }}
         />
@@ -712,130 +794,370 @@ const styles = StyleSheet.create({
   },
 
   // ==========================================
-  // ESTILOS PANTALLA DE PERFIL (Figma exacto)
+  // ESTILOS PANTALLA "TU PERFIL" (Figma exacto)
   // ==========================================
-  profileScrollContent: {
-    paddingBottom: 100,
-    paddingTop: 10,
-  },
-  profileHeaderCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
+  editProfileScrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 110,
   },
-  profileAvatarWrapper: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+  editProfileHeading: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: TEXT_DARK,
+    marginBottom: 4,
+  },
+  editProfileSubheading: {
+    fontSize: 13.5,
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  publicProfileLinkWrapper: {
+    marginBottom: 16,
+    alignSelf: 'flex-start',
+  },
+  publicProfileLinkText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D9488',
+    textDecorationLine: 'underline',
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 22,
+    padding: 3,
+    alignSelf: 'flex-start',
+    marginBottom: 18,
+  },
+  segmentButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+    borderRadius: 18,
+    backgroundColor: 'transparent',
+  },
+  segmentButtonActive: {
+    backgroundColor: '#1F232E',
+  },
+  segmentButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  segmentButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  editSectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT_DARK,
+    marginBottom: 12,
+  },
+  inputFieldLabel: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  mainPhotoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 8,
+  },
+  mainPhotoCircle: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     backgroundColor: '#D9D9D9',
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  mainPhotoImage: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+  },
+  mainPhotoPlaceholder: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    backgroundColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mainPhotoPlaceholderText: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  changePhotoButton: {
+    borderWidth: 1.5,
+    borderColor: '#1F232E',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  changePhotoButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1F232E',
+  },
+  coverPhotoBox: {
+    width: '100%',
+    height: 125,
+    backgroundColor: '#D9D9D9',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  editTextInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 44,
+    fontSize: 14,
+    color: TEXT_DARK,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' as any } : {}),
+  },
+  mapCard: {
+    width: '100%',
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 14,
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  mapImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  mapPinContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -16 }, { translateY: -30 }],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapExplanationText: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
+    marginTop: 10,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
+  saveMessageBadge: {
+    backgroundColor: '#E6FAF5',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginTop: 14,
+    alignSelf: 'center',
+  },
+  saveMessageText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D9488',
+  },
+  saveProfileButton: {
+    backgroundColor: '#3BD7C2',
+    borderRadius: 25,
+    height: 48,
+    width: '55%',
+    maxWidth: 220,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+    shadowColor: '#3BD7C2',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
     shadowRadius: 6,
-    elevation: 2,
+    elevation: 3,
   },
-  profileAvatarImage: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
-  profileAvatarDefault: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+  saveProfileButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1F232E',
+  },
+
+  // Pestaña Cuenta
+  accountTabContainer: {
+    paddingTop: 10,
+  },
+  accountInfoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  accountInfoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9098B1',
+    marginBottom: 4,
+  },
+  accountInfoValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: TEXT_DARK,
+  },
+  accountLogoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 14,
+    gap: 6,
+  },
+  accountLogoutButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+
+  // Perfil Público Navegación
+  backToEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  backToEditText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D9488',
+  },
+
+  // ==========================================
+  // ESTILOS MENÚ DESPLEGABLE "TÚ" (Figma Referencia 1)
+  // ==========================================
+  tuMenuScrollContent: {
+    paddingHorizontal: 0,
+    paddingBottom: 110,
+    backgroundColor: '#FFFFFF',
+  },
+  tuHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+  },
+  tuAvatarWrapper: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: '#D9D9D9',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tuAvatarImage: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+  },
+  tuAvatarDefault: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     backgroundColor: '#D9D9D9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileAvatarDefaultText: {
+  tuAvatarDefaultText: {
     fontSize: 32,
     fontWeight: '700',
     color: '#475569',
   },
-  profileUserName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: TEXT_DARK,
-    marginBottom: 6,
-    textAlign: 'center',
+  tuUserInfoCol: {
+    flex: 1,
+    marginLeft: 16,
+    justifyContent: 'center',
   },
-  profileRatingRow: {
+  tuUserName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: TEXT_DARK,
+    marginBottom: 4,
+  },
+  tuRatingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 3,
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  profileRatingCount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: TEXT_DARK,
-    marginLeft: 4,
-  },
-  profileMemberSince: {
-    fontSize: 13,
-    color: '#9098B1',
-    fontWeight: '400',
-  },
-
-  // Secciones de Perfil
-  profileSection: {
-    marginTop: 18,
-    paddingHorizontal: 16,
-  },
-  profileSectionTitle: {
-    fontSize: 12,
+  tuRatingCount: {
+    fontSize: 13.5,
     fontWeight: '700',
-    color: '#9098B1',
-    letterSpacing: 0.6,
+    color: TEXT_DARK,
+    marginLeft: 3,
+  },
+  tuMemberSince: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  tuHeaderArrow: {
+    padding: 6,
+  },
+  tuSection: {
+    marginTop: 18,
+  },
+  tuSectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: TEXT_DARK,
+    paddingHorizontal: 20,
     marginBottom: 8,
-    marginLeft: 4,
   },
-  profileMenuCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  profileMenuItem: {
+  tuMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 15,
-    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     backgroundColor: '#FFFFFF',
   },
-  profileMenuItemLeft: {
+  tuMenuItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
   },
-  profileMenuItemText: {
-    fontSize: 15,
+  tuMenuItemText: {
+    fontSize: 16,
     fontWeight: '500',
     color: TEXT_DARK,
-  },
-  profileMenuDivider: {
-    height: 1,
-    backgroundColor: '#F8FAFC',
-    marginLeft: 52,
   },
 
   // Logout
   logoutContainer: {
     marginTop: 26,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
   logoutButton: {
     flexDirection: 'row',

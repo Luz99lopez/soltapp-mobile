@@ -12,7 +12,7 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../supabase';
 import { getAuthRedirectUri } from '../utils/auth';
@@ -23,6 +23,7 @@ import LogoSoltapp from '../../assets/svgs/logotipo color.svg';
 export default function RegisterScreen() {
   const router = useRouter();
 
+  const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
@@ -58,10 +59,11 @@ export default function RegisterScreen() {
     setSuccessMessage(null);
     setShowLoginLink(false);
 
+    const trimmedFullName = fullName.trim();
     const trimmedEmail = email.trim();
 
     // 1. Validar campos obligatorios
-    if (!trimmedEmail || !password || !confirmPassword) {
+    if (!trimmedFullName || !trimmedEmail || !password || !confirmPassword) {
       setErrorMessage('Por favor completa todos los campos.');
       return;
     }
@@ -93,6 +95,10 @@ export default function RegisterScreen() {
         email: trimmedEmail,
         password: password,
         options: {
+          data: {
+            full_name: trimmedFullName,
+            name: trimmedFullName,
+          },
           emailRedirectTo: redirectUri,
         },
       });
@@ -170,7 +176,30 @@ export default function RegisterScreen() {
 
             {/* Formulario */}
             <View style={styles.form}>
-              {/* Input 1: Email */}
+              {/* Input 1: Nombre y Apellido */}
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="person-circle-outline"
+                  size={21}
+                  color="#9098B1"
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nombre y Apellido"
+                  placeholderTextColor="#9098B1"
+                  value={fullName}
+                  onChangeText={(text) => {
+                    setFullName(text);
+                    clearMessages();
+                  }}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!loading}
+                />
+              </View>
+
+              {/* Input 2: Email */}
               <View style={styles.inputContainer}>
                 <Feather
                   name="mail"
@@ -194,11 +223,11 @@ export default function RegisterScreen() {
                 />
               </View>
 
-              {/* Input 2: Contraseña */}
+              {/* Input 3: Contraseña */}
               <View style={styles.inputContainer}>
-                <Feather
-                  name="lock"
-                  size={19}
+                <Ionicons
+                  name="key-outline"
+                  size={20}
                   color="#9098B1"
                   style={styles.inputIcon}
                 />
@@ -228,17 +257,17 @@ export default function RegisterScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Input 3: Repetir contraseña */}
+              {/* Input 4: Confirmar contraseña */}
               <View style={styles.inputContainer}>
-                <Feather
-                  name="lock"
-                  size={19}
+                <Ionicons
+                  name="key-outline"
+                  size={20}
                   color="#9098B1"
                   style={styles.inputIcon}
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder="Repetir contraseña"
+                  placeholder="Confirmar contraseña"
                   placeholderTextColor="#9098B1"
                   value={confirmPassword}
                   onChangeText={(text) => {
@@ -308,7 +337,7 @@ export default function RegisterScreen() {
             {/* Enlace inferior para volver al Login */}
             <View style={styles.footerContainer}>
               <View style={styles.loginRow}>
-                <Text style={styles.loginLabel}>¿Tenés una cuenta? </Text>
+                <Text style={styles.loginLabel}>Tenes una cuenta? </Text>
                 <TouchableOpacity onPress={handleGoToLogin} activeOpacity={0.7} disabled={loading}>
                   <Text style={styles.loginLink}>Ingresá</Text>
                 </TouchableOpacity>
@@ -321,9 +350,9 @@ export default function RegisterScreen() {
   );
 }
 
-const PRIMARY_COLOR = '#1DE9B6'; // Color turquesa oficial de Soltapp
+const PRIMARY_COLOR = '#3BD7C2'; // Color turquesa oficial de Soltapp
 const TEXT_DARK = '#1F232E';
-const BORDER_COLOR = '#EBF0F5';
+const BORDER_COLOR = '#E2E8F0';
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -369,12 +398,12 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
-    borderRadius: 12,
+    borderColor: '#E8ECF2',
+    borderRadius: 8,
     paddingHorizontal: 16,
-    height: 50,
+    height: 52,
   },
   inputIcon: {
     marginRight: 12,
@@ -393,7 +422,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF1F2',
     borderWidth: 1,
     borderColor: '#FECDD3',
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 8,
@@ -425,7 +454,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
     borderWidth: 1,
     borderColor: '#BBF7D0',
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 8,
@@ -455,11 +484,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textDecorationLine: 'underline',
   },
-  // Primary Button
+  // Primary Button (Pill shape)
   primaryButton: {
     backgroundColor: PRIMARY_COLOR,
-    borderRadius: 12,
-    height: 50,
+    borderRadius: 26,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,
@@ -473,7 +502,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   primaryButtonText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
@@ -487,11 +516,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loginLabel: {
-    fontSize: 14,
-    color: '#8A97A6',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9098B1',
   },
   loginLink: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: PRIMARY_COLOR,
   },
