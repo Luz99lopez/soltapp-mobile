@@ -34,26 +34,148 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showRegisterLink, setShowRegisterLink] = useState<boolean>(false);
+
+  // Validación de formato de correo con expresión regular (RegEx)
+  const isValidEmail = (emailStr: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(emailStr);
+  };
 
   // Inicio de sesión con Email y Contraseña (Supabase)
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Atención', 'Por favor ingresa tu email y contraseña.');
+    setErrorMessage(null);
+    setShowRegisterLink(false);
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setErrorMessage('Por favor completa todos los campos.');
+      setShowRegisterLink(false);
       return;
     }
 
+    // 1. Validación de formato de correo (Regex)
+    if (!isValidEmail(trimmedEmail)) {
+      setErrorMessage('El correo es inválido');
+      setShowRegisterLink(false);
+      return;
+    }
+
+    setLoading(true);
     try {
-      setLoading(true);
+      // 1. Verificación previa: Comprobar si el correo existe en la base de datos (tabla profiles o users)
+      let emailExists = false;
+      let checkedViaTable = false;
+
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .eq('email', trimmedEmail)
+          .maybeSingle();
+
+        if (!profileError) {
+          checkedViaTable = true;
+          emailExists = !!profileData;
+        } else {
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id, email')
+            .eq('email', trimmedEmail)
+            .maybeSingle();
+
+          if (!userError) {
+            checkedViaTable = true;
+            emailExists = !!userData;
+          }
+        }
+      } catch {
+        // En caso de que RLS impida lectura anónima o no exista la tabla, continuamos con el flujo de auth
+      }
+
+      // Si la consulta a la base de datos confirmó que el correo NO existe
+      if (checkedViaTable && !emailExists) {
+        setErrorMessage('El correo no está registrado');
+        setShowRegisterLink(true);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Intentar autenticación con Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
+        email: trimmedEmail,
+        password,
       });
 
-      if (error) throw error;
-
-      router.push('/home' as any);
-    } catch (err: any) {
-      Alert.alert('Error al ingresar', err.message || 'Verifica tus credenciales.');
+      if (error) {
+        const errorMsg = (error.message || '').toLowerCase();
+        const errorCode = ((error as any).code || '').toLowerCase();
+        const status = error.status || (error as any).statusCode;
+        
+        // Caso 1: Error explícito de contraseña incorrecta
+        if (
+          (checkedViaTable && emailExists) ||
+          errorMsg.includes('wrong password') ||
+          errorMsg.includes('invalid password') ||
+          errorMsg.includes('incorrect password')
+        ) {
+          setErrorMessage('La contraseña es incorrecta');
+          setShowRegisterLink(false);
+        }
+        // Caso 2: Usuario / Correo no registrado (o credenciales no encontradas en el sistema)
+        else if (
+          errorMsg.includes('user not found') ||
+          errorMsg.includes('not registered') ||
+          errorMsg.includes('user_not_found') ||
+          errorMsg.includes('no user') ||
+          errorMsg.includes('email not found') ||
+          errorCode === 'user_not_found' ||
+          errorCode === 'user_not_registered' ||
+          errorMsg.includes('invalid login credentials') ||
+          errorMsg.includes('invalid_grant') ||
+          errorMsg.includes('invalid credentials') ||
+          errorCode === 'invalid_credentials' ||
+          errorCode === 'invalid_grant' ||
+          status === 401 ||
+          status === 400
+        ) {
+          setErrorMessage('El correo no está registrado');
+          setShowRegisterLink(true);
+        } 
+        // Caso 3: Email aún no confirmado
+        else if (
+          errorMsg.includes('email not confirmed') ||
+          errorMsg.includes('email_not_confirmed') ||
+          errorCode === 'email_not_confirmed'
+        ) {
+          setErrorMessage('El correo electrónico aún no ha sido confirmado. Por favor verifica tu bandeja de entrada.');
+          setShowRegisterLink(false);
+        } 
+        // Caso 4: Límite de intentos (Rate limit)
+        else if (
+          errorMsg.includes('rate limit') ||
+          errorMsg.includes('too many requests') ||
+          status === 429
+        ) {
+          setErrorMessage('Demasiados intentos. Espera unos minutos.');
+          setShowRegisterLink(false);
+        } 
+        // Caso por defecto
+        else {
+          setErrorMessage('El correo no está registrado');
+          setShowRegisterLink(true);
+        }
+      } else if (data?.session) {
+        // Redirección exitosa
+        router.replace('/home' as any);
+      } else {
+        setErrorMessage('El correo no está registrado');
+        setShowRegisterLink(true);
+      }
+    } catch (err) {
+      setErrorMessage('Ocurrió un error de conexión. Inténtalo de nuevo.');
+      setShowRegisterLink(false);
     } finally {
       setLoading(false);
     }
@@ -178,7 +300,13 @@ export default function LoginScreen() {
                   placeholder="Email"
                   placeholderTextColor="#9098B1"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (errorMessage) {
+                      setErrorMessage(null);
+                      setShowRegisterLink(false);
+                    }
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -199,7 +327,13 @@ export default function LoginScreen() {
                   placeholder="Contraseña"
                   placeholderTextColor="#9098B1"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    if (errorMessage) {
+                      setErrorMessage(null);
+                      setShowRegisterLink(false);
+                    }
+                  }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   editable={!loading}
@@ -215,6 +349,21 @@ export default function LoginScreen() {
                   />
                 </TouchableOpacity>
               </View>
+
+              {/* Mensaje de Error Integrado */}
+              {errorMessage && (
+                <View style={styles.errorContainer}>
+                  <Feather name="alert-circle" size={17} color="#E11D48" style={styles.errorIcon} />
+                  <View style={styles.errorTextContainer}>
+                    <Text style={styles.errorText}>{errorMessage}{showRegisterLink ? ' ' : ''}</Text>
+                    {showRegisterLink && (
+                      <TouchableOpacity onPress={() => router.push('/register' as any)} activeOpacity={0.7}>
+                        <Text style={styles.errorLink}>¿Querés registrarte?</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
 
               {/* Botón Principal "Ingresá" */}
               <TouchableOpacity
@@ -370,6 +519,38 @@ const styles = StyleSheet.create({
     fontWeight: 'normal',
     color: TEXT_DARK,
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' as any } : {}),
+  },
+  // Error Container
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  errorIcon: {
+    marginRight: 2,
+  },
+  errorTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#E11D48',
+    fontWeight: '500',
+  },
+  errorLink: {
+    fontSize: 13,
+    color: '#E11D48',
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   // Primary Button
   primaryButton: {

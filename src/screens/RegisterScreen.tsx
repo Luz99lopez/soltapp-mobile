@@ -9,13 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../supabase';
+import { getAuthRedirectUri } from '../utils/auth';
 
 // Logotipo SVG oficial de Soltapp
 import LogoSoltapp from '../../assets/svgs/logotipo color.svg';
@@ -30,119 +30,114 @@ export default function RegisterScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
+  // Estados visuales integrados en la UI
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showLoginLink, setShowLoginLink] = useState<boolean>(false);
+
   // Validación de formato de correo con expresión regular (RegEx)
   const isValidEmail = (emailStr: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(emailStr);
   };
 
-  // Validación de complejidad de contraseña (8+ caracteres, mayúscula, minúscula, número y carácter especial)
-  const validatePasswordComplexity = (pass: string): { isValid: boolean; message?: string } => {
-    if (pass.length < 8) {
-      return { isValid: false, message: 'La contraseña debe tener al menos 8 caracteres.' };
+  // Limpiar mensajes reactivamente cuando el usuario escribe
+  const clearMessages = () => {
+    if (errorMessage) {
+      setErrorMessage(null);
+      setShowLoginLink(false);
     }
-    if (!/[A-Z]/.test(pass)) {
-      return { isValid: false, message: 'La contraseña debe contener al menos una letra mayúscula.' };
+    if (successMessage) {
+      setSuccessMessage(null);
     }
-    if (!/[a-z]/.test(pass)) {
-      return { isValid: false, message: 'La contraseña debe contener al menos una letra minúscula.' };
-    }
-    if (!/\d/.test(pass)) {
-      return { isValid: false, message: 'La contraseña debe contener al menos un número.' };
-    }
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(pass)) {
-      return { isValid: false, message: 'La contraseña debe contener al menos un carácter especial (ej: !@#$%&*).' };
-    }
-    return { isValid: true };
   };
 
-  // Mapeo de errores comunes de Supabase a mensajes claros en español
-  const getFriendlyErrorMessage = (errorMsg: string): string => {
-    const msg = errorMsg.toLowerCase();
-    if (
-      msg.includes('user already registered') ||
-      msg.includes('already registered') ||
-      msg.includes('user_already_exists')
-    ) {
-      return 'Este correo electrónico ya se encuentra registrado. Por favor inicia sesión.';
-    }
-    if (msg.includes('invalid email') || msg.includes('email address is invalid')) {
-      return 'El formato del correo electrónico ingresado no es válido.';
-    }
-    if (msg.includes('rate limit') || msg.includes('too many requests')) {
-      return 'Has realizado demasiados intentos. Por favor espera unos minutos antes de volver a intentar.';
-    }
-    if (msg.includes('password should be at least')) {
-      return 'La contraseña no cumple con la longitud mínima requerida por el sistema.';
-    }
-    return errorMsg || 'Ocurrió un error al intentar crear la cuenta.';
-  };
-
-  // Lógica de registro y validaciones
+  // Lógica de registro y validaciones con Supabase
   const handleRegister = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setShowLoginLink(false);
+
     const trimmedEmail = email.trim();
 
     // 1. Validar campos obligatorios
     if (!trimmedEmail || !password || !confirmPassword) {
-      Alert.alert('Campos incompletos', 'Por favor completa todos los campos para continuar.');
+      setErrorMessage('Por favor completa todos los campos.');
       return;
     }
 
-    // 2. Validar formato de correo electrónico
+    // 2. Validar formato de correo (Regex)
     if (!isValidEmail(trimmedEmail)) {
-      Alert.alert(
-        'Correo inválido',
-        'Por favor ingresa una dirección de correo electrónico válida (ej: usuario@ejemplo.com).'
-      );
+      setErrorMessage('El correo es inválido');
       return;
     }
 
-    // 3. Validar robustez de la contraseña
-    const passwordCheck = validatePasswordComplexity(password);
-    if (!passwordCheck.isValid) {
-      Alert.alert('Contraseña débil', passwordCheck.message);
+    // 3. Validar longitud de la contraseña (mínimo 8 caracteres)
+    if (password.length < 8) {
+      setErrorMessage('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
 
     // 4. Validar coincidencia de contraseñas
     if (password !== confirmPassword) {
-      Alert.alert('Contraseñas no coinciden', 'Las contraseñas ingresadas no coinciden. Por favor verifícalas.');
+      setErrorMessage('Las contraseñas no coinciden.');
       return;
     }
 
     try {
       setLoading(true);
 
+      const redirectUri = getAuthRedirectUri();
+
       const { data, error } = await supabase.auth.signUp({
         email: trimmedEmail,
         password: password,
+        options: {
+          emailRedirectTo: redirectUri,
+        },
       });
 
       if (error) {
-        Alert.alert('Error en el registro', getFriendlyErrorMessage(error.message));
+        const msg = (error.message || '').toLowerCase();
+        if (
+          msg.includes('user already registered') ||
+          msg.includes('already registered') ||
+          msg.includes('user_already_exists') ||
+          msg.includes('identity already exists')
+        ) {
+          setErrorMessage('Este correo ya se encuentra registrado.');
+          setShowLoginLink(true);
+        } else if (msg.includes('invalid email') || msg.includes('email address is invalid')) {
+          setErrorMessage('El correo es inválido');
+        } else if (msg.includes('password should be at least') || msg.includes('weak_password')) {
+          setErrorMessage('La contraseña debe tener al menos 8 caracteres.');
+        } else if (msg.includes('rate limit') || msg.includes('too many requests')) {
+          setErrorMessage('Demasiados intentos. Espera unos minutos.');
+        } else if (msg.includes('invalid api key') || msg.includes('apikey')) {
+          setErrorMessage('Clave de API de Supabase no configurada o inválida.');
+        } else {
+          setErrorMessage(error.message || 'Ocurrió un error al intentar crear la cuenta.');
+        }
         return;
       }
 
-      // Si Supabase devuelve sesión activa directamente
-      if (data?.session) {
-        Alert.alert('¡Registro exitoso!', 'Tu cuenta ha sido creada e iniciada correctamente.', [
-          { text: 'Comenzar', onPress: () => router.push('/home' as any) },
-        ]);
-      } else {
-        // Si se requiere confirmación por email
-        Alert.alert(
-          '¡Cuenta creada con éxito!',
-          'Hemos enviado un correo de confirmación a tu dirección. Por favor verifica tu bandeja de entrada antes de iniciar sesión.',
-          [
-            {
-              text: 'Ir a Iniciar Sesión',
-              onPress: () => router.push('/login' as any),
-            },
-          ]
-        );
+      // En Supabase, si la confirmación de email está activa y el usuario ya existe, data.user.identities es un array vacío
+      if (data?.user && data.user.identities && data.user.identities.length === 0) {
+        setErrorMessage('Este correo ya se encuentra registrado.');
+        setShowLoginLink(true);
+        return;
       }
+
+      // Caso A: Si Supabase devuelve sesión activa directamente
+      if (data?.session) {
+        router.replace('/home' as any);
+        return;
+      }
+
+      // Caso B: Si se requiere confirmación por email
+      setSuccessMessage('¡Cuenta creada con éxito! Hemos enviado un correo de confirmación a tu dirección.');
     } catch (err: any) {
-      Alert.alert('Error inesperado', getFriendlyErrorMessage(err?.message || ''));
+      setErrorMessage('Error de conexión. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -188,7 +183,10 @@ export default function RegisterScreen() {
                   placeholder="Email"
                   placeholderTextColor="#9098B1"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    clearMessages();
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -209,7 +207,10 @@ export default function RegisterScreen() {
                   placeholder="Contraseña"
                   placeholderTextColor="#9098B1"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    clearMessages();
+                  }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   editable={!loading}
@@ -240,7 +241,10 @@ export default function RegisterScreen() {
                   placeholder="Repetir contraseña"
                   placeholderTextColor="#9098B1"
                   value={confirmPassword}
-                  onChangeText={setConfirmPassword}
+                  onChangeText={(text) => {
+                    setConfirmPassword(text);
+                    clearMessages();
+                  }}
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
                   editable={!loading}
@@ -257,6 +261,34 @@ export default function RegisterScreen() {
                   />
                 </TouchableOpacity>
               </View>
+
+              {/* Mensaje de Error Integrado */}
+              {errorMessage && (
+                <View style={styles.errorContainer}>
+                  <Feather name="alert-circle" size={17} color="#E11D48" style={styles.errorIcon} />
+                  <View style={styles.errorTextContainer}>
+                    <Text style={styles.errorText}>{errorMessage}{showLoginLink ? ' ' : ''}</Text>
+                    {showLoginLink && (
+                      <TouchableOpacity onPress={handleGoToLogin} activeOpacity={0.7}>
+                        <Text style={styles.errorLink}>¿Querés ingresar?</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Mensaje de Éxito Integrado */}
+              {successMessage && (
+                <View style={styles.successContainer}>
+                  <Feather name="check-circle" size={18} color="#16A34A" style={styles.successIcon} />
+                  <View style={styles.successTextContainer}>
+                    <Text style={styles.successText}>{successMessage}</Text>
+                    <TouchableOpacity onPress={handleGoToLogin} style={styles.successButton} activeOpacity={0.7}>
+                      <Text style={styles.successButtonText}>Ir a Iniciar Sesión</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
 
               {/* Botón Principal "Registrar" */}
               <TouchableOpacity
@@ -354,6 +386,75 @@ const styles = StyleSheet.create({
     color: TEXT_DARK,
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' as any } : {}),
   },
+  // Error Container
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  errorIcon: {
+    marginRight: 2,
+  },
+  errorTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#E11D48',
+    fontWeight: '500',
+  },
+  errorLink: {
+    fontSize: 13,
+    color: '#E11D48',
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  // Success Container
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  successIcon: {
+    marginTop: 2,
+    marginRight: 2,
+  },
+  successTextContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    gap: 6,
+  },
+  successText: {
+    fontSize: 13.5,
+    color: '#16A34A',
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  successButton: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  successButtonText: {
+    fontSize: 13.5,
+    color: '#16A34A',
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
+  },
   // Primary Button
   primaryButton: {
     backgroundColor: PRIMARY_COLOR,
@@ -361,7 +462,7 @@ const styles = StyleSheet.create({
     height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 6,
     shadowColor: PRIMARY_COLOR,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,

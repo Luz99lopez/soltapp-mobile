@@ -5,7 +5,7 @@ import { createClient, SupportedStorage } from '@supabase/supabase-js';
 
 // URL del proyecto real de Supabase
 export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://mpfcbpvjinwfkkwpffey.supabase.co';
-export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'tu-anon-key-aqui';
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1wZmNicHZqaW53Zmtrd3BmZmV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3ODkzNTksImV4cCI6MjEwNTM2NTM1OX0.s8xPjB5dgSQMSf4LPkd-KtO06NGZ2CBwgK2mDBAki_s';
 
 // Adaptador de almacenamiento condicional y seguro para Web (SSR / Client) y Móvil (AsyncStorage)
 const customStorage: SupportedStorage = {
