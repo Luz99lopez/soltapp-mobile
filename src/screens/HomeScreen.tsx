@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,10 +12,12 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
+import { fetchHomeProducts, ProductListItem } from '../services';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
 import InboxView from '../components/InboxView';
 
@@ -53,69 +55,7 @@ const CATEGORIES = [
   { id: '5', name: 'Inmobilia\nria', IconComponent: InmobiliariaIcon },
 ];
 
-// Datos Mock de Productos Cercanos
-const NEARBY_PRODUCTS = [
-  {
-    id: 'p1',
-    title: 'Volkswagen Gol Trend 1.6 MSI',
-    price: '$ 8.500.000',
-    location: 'Pilar Centro',
-    time: 'Hace 15 min',
-    image: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80',
-  },
-  {
-    id: 'p2',
-    title: 'iPhone 13 Pro 128GB Grafito',
-    price: '$ 680.000',
-    location: 'Pilar, Km 50',
-    time: 'Hace 1 hora',
-    image: 'https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=500&q=80',
-  },
-  {
-    id: 'p3',
-    title: 'Bicicleta Rodado 29 Mountain Bike',
-    price: '$ 240.000',
-    location: 'Del Viso, Pilar',
-    time: 'Hace 3 horas',
-    image: 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=500&q=80',
-  },
-];
-
-// Datos Mock de Productos Recientes
-const RECENT_PRODUCTS = [
-  {
-    id: 'r1',
-    title: 'PlayStation 5 con 2 Joysticks',
-    price: '$ 750.000',
-    location: 'Pilar Point',
-    time: 'Hace 20 min',
-    image: 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=500&q=80',
-  },
-  {
-    id: 'r2',
-    title: 'Departamento 2 Ambientes c/ Balcón',
-    price: 'USD 65.000',
-    location: 'Pilar Casas',
-    time: 'Hace 45 min',
-    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=500&q=80',
-  },
-  {
-    id: 'r3',
-    title: 'Smart TV 50" 4K UHD Samsung',
-    price: '$ 490.000',
-    location: 'Pilar Centro',
-    time: 'Hace 2 horas',
-    image: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=500&q=80',
-  },
-  {
-    id: 'r4',
-    title: 'Campera de Cuero Hombre Talle L',
-    price: '$ 85.000',
-    location: 'Manuel Alberti',
-    time: 'Hace 5 horas',
-    image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=500&q=80',
-  },
-];
+const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -123,6 +63,31 @@ export default function HomeScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'home' | 'favorites' | 'upload' | 'inbox' | 'profile'>('home');
+
+  // Estado dinámico de publicaciones desde Supabase
+  const [products, setProducts] = useState<ProductListItem[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Carga de productos reales de Supabase
+  const loadProducts = useCallback(async () => {
+    try {
+      setProductsError(null);
+      const data = await fetchHomeProducts();
+      setProducts(data);
+    } catch (err: any) {
+      console.error('[HomeScreen.loadProducts] Error:', err);
+      setProductsError(err.message || 'Error al cargar productos.');
+    } finally {
+      setLoadingProducts(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
 
   useEffect(() => {
     if (params?.tab === 'inbox') {
@@ -139,11 +104,62 @@ export default function HomeScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const [isGridView, setIsGridView] = useState(true);
+  // Helper de formateo de precio según la moneda (ARS / USD)
+  const formatProductPrice = (price: number | string, currency: string = 'ARS') => {
+    const numericPrice = Number(price) || 0;
+    const formatted = numericPrice.toLocaleString('es-AR');
+    return currency?.toUpperCase() === 'USD' ? `USD ${formatted}` : `$ ${formatted}`;
+  };
+
+  // Helper para obtener imagen de portada con fallback
+  const getProductCoverImage = (prod: ProductListItem) => {
+    if (prod.cover_image) return prod.cover_image;
+    if (prod.images && prod.images.length > 0) {
+      const cover = prod.images.find((img) => img.is_cover);
+      return cover ? cover.image_url : prod.images[0].image_url;
+    }
+    return DEFAULT_FALLBACK_IMAGE;
+  };
+
+  // Filtrado de publicaciones por barra de búsqueda
+  const filteredProducts = products.filter((p) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      p.title.toLowerCase().includes(q) ||
+      (p.location && p.location.toLowerCase().includes(q)) ||
+      (p.category?.name && p.category.name.toLowerCase().includes(q))
+    );
+  });
+
+  const nearbyProducts = filteredProducts.slice(0, 4);
+  const recentProducts = filteredProducts.length > 4 ? filteredProducts.slice(4) : filteredProducts;
+
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
+  const [categoriesModalVisible, setCategoriesModalVisible] = useState<boolean>(false);
+
+  const handleProductPress = (productId: string) => {
+    router.push({
+      pathname: '/modal',
+      params: { productId },
+    } as any);
+  };
 
   useEffect(() => {
+    // Manejo de intercambio de código OAuth (PKCE) en navegador web móvil o desktop
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const code = searchParams.get('code');
+      if (code) {
+        supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
+          if (data?.user) {
+            setCurrentUser(data.user);
+            loadUserData(data.user);
+          }
+        });
+      }
+    }
+
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setCurrentUser(user);
@@ -466,6 +482,17 @@ export default function HomeScreen() {
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  loadProducts();
+                }}
+                colors={['#1DE9B6']}
+                tintColor="#1DE9B6"
+              />
+            }
           >
             {/* Banner Publicitario Superior */}
             <View style={styles.bannerContainer}>
@@ -506,103 +533,145 @@ export default function HomeScreen() {
               })}
             </ScrollView>
 
-            {/* Sección: Cerca de donde estás - Pilar */}
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleWithLocation}>
-                <Text style={styles.sectionTitle}>Cerca de donde estás</Text>
-                <View style={styles.locationBadge}>
-                  <Ionicons name="location-sharp" size={12} color="#1DE9B6" />
-                  <Text style={styles.locationBadgeText}>Pilar</Text>
-                </View>
+            {/* Estado de carga discreto */}
+            {loadingProducts && products.length === 0 ? (
+              <View style={{ paddingVertical: 32, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator size="small" color="#1DE9B6" />
+                <Text style={{ marginTop: 8, fontSize: 13, color: '#9098B1' }}>Cargando publicaciones...</Text>
               </View>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>Ver más</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalProductsScroll}
-            >
-              {NEARBY_PRODUCTS.map((prod) => {
-                const isFav = favorites.includes(prod.id);
-                return (
-                  <TouchableOpacity key={prod.id} style={styles.horizontalCard} activeOpacity={0.85}>
-                    <View style={styles.imageContainer}>
-                      <Image source={{ uri: prod.image }} style={styles.productImage} />
-                      <TouchableOpacity
-                        style={styles.favoriteButton}
-                        onPress={() => toggleFavorite(prod.id)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ionicons
-                          name={isFav ? 'heart' : 'heart-outline'}
-                          size={18}
-                          color={isFav ? '#EF4444' : '#1F232E'}
-                        />
-                      </TouchableOpacity>
+            ) : filteredProducts.length === 0 ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center', paddingHorizontal: 24 }}>
+                <Ionicons name="bag-handle-outline" size={38} color="#9098B1" />
+                <Text style={{ marginTop: 12, fontSize: 15, fontWeight: '600', color: '#1F232E', textAlign: 'center' }}>
+                  No se encontraron productos
+                </Text>
+                <Text style={{ marginTop: 4, fontSize: 13, color: '#9098B1', textAlign: 'center' }}>
+                  {searchQuery.trim() ? 'Prueba con otro término de búsqueda.' : 'Sé el primero en publicar un producto.'}
+                </Text>
+                <TouchableOpacity
+                  onPress={loadProducts}
+                  style={{ marginTop: 16, backgroundColor: '#E6FDF8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 }}
+                >
+                  <Text style={{ color: '#0D9488', fontSize: 13, fontWeight: '600' }}>Actualizar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                {/* Sección: Cerca de donde estás - Pilar */}
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionTitleWithLocation}>
+                    <Text style={styles.sectionTitle}>Cerca de donde estás</Text>
+                    <View style={styles.locationBadge}>
+                      <Ionicons name="location-sharp" size={12} color="#1DE9B6" />
+                      <Text style={styles.locationBadgeText}>Pilar</Text>
                     </View>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.productPrice}>{prod.price}</Text>
-                      <Text style={styles.productTitle} numberOfLines={2}>
-                        {prod.title}
-                      </Text>
-                      <View style={styles.productFooter}>
-                        <Ionicons name="location-outline" size={12} color="#9098B1" />
-                        <Text style={styles.productLocation} numberOfLines={1}>
-                          {prod.location}
-                        </Text>
-                      </View>
-                    </View>
+                  </View>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>Ver más</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                </View>
 
-            {/* Sección: Lo recién publicado */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Lo recién publicado</Text>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>Ver todo</Text>
-              </TouchableOpacity>
-            </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalProductsScroll}
+                >
+                  {nearbyProducts.map((prod) => {
+                    const isFav = favorites.includes(prod.id);
+                    const coverUrl = getProductCoverImage(prod);
+                    const formattedPrice = formatProductPrice(prod.price, prod.currency);
 
-            <View style={styles.gridContainer}>
-              {RECENT_PRODUCTS.map((prod) => {
-                const isFav = favorites.includes(prod.id);
-                return (
-                  <TouchableOpacity key={prod.id} style={styles.gridCard} activeOpacity={0.85}>
-                    <View style={styles.gridImageContainer}>
-                      <Image source={{ uri: prod.image }} style={styles.productImage} />
+                    return (
                       <TouchableOpacity
-                        style={styles.favoriteButton}
-                        onPress={() => toggleFavorite(prod.id)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        key={prod.id}
+                        style={styles.horizontalCard}
+                        activeOpacity={0.85}
+                        onPress={() => handleProductPress(prod.id)}
                       >
-                        <Ionicons
-                          name={isFav ? 'heart' : 'heart-outline'}
-                          size={18}
-                          color={isFav ? '#EF4444' : '#1F232E'}
-                        />
+                        <View style={styles.imageContainer}>
+                          <Image source={{ uri: coverUrl }} style={styles.productImage} />
+                          <TouchableOpacity
+                            style={styles.favoriteButton}
+                            onPress={() => toggleFavorite(prod.id)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons
+                              name={isFav ? 'heart' : 'heart-outline'}
+                              size={18}
+                              color={isFav ? '#EF4444' : '#1F232E'}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.productPrice}>{formattedPrice}</Text>
+                          <Text style={styles.productTitle} numberOfLines={2}>
+                            {prod.title}
+                          </Text>
+                          <View style={styles.productFooter}>
+                            <Ionicons name="location-outline" size={12} color="#9098B1" />
+                            <Text style={styles.productLocation} numberOfLines={1}>
+                              {prod.location || 'Pilar'}
+                            </Text>
+                          </View>
+                        </View>
                       </TouchableOpacity>
-                    </View>
-                    <View style={styles.gridCardInfo}>
-                      <Text style={styles.productPrice}>{prod.price}</Text>
-                      <Text style={styles.productTitle} numberOfLines={2}>
-                        {prod.title}
-                      </Text>
-                      <View style={styles.productFooter}>
-                        <Ionicons name="location-outline" size={12} color="#9098B1" />
-                        <Text style={styles.productLocation} numberOfLines={1}>
-                          {prod.location}
-                        </Text>
-                      </View>
-                    </View>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Sección: Lo recién publicado */}
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Lo recién publicado</Text>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>Ver todo</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
+                </View>
+
+                <View style={styles.gridContainer}>
+                  {recentProducts.map((prod) => {
+                    const isFav = favorites.includes(prod.id);
+                    const coverUrl = getProductCoverImage(prod);
+                    const formattedPrice = formatProductPrice(prod.price, prod.currency);
+
+                    return (
+                      <TouchableOpacity
+                        key={prod.id}
+                        style={styles.gridCard}
+                        activeOpacity={0.85}
+                        onPress={() => handleProductPress(prod.id)}
+                      >
+                        <View style={styles.gridImageContainer}>
+                          <Image source={{ uri: coverUrl }} style={styles.productImage} />
+                          <TouchableOpacity
+                            style={styles.favoriteButton}
+                            onPress={() => toggleFavorite(prod.id)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons
+                              name={isFav ? 'heart' : 'heart-outline'}
+                              size={18}
+                              color={isFav ? '#EF4444' : '#1F232E'}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.gridCardInfo}>
+                          <Text style={styles.productPrice}>{formattedPrice}</Text>
+                          <Text style={styles.productTitle} numberOfLines={2}>
+                            {prod.title}
+                          </Text>
+                          <View style={styles.productFooter}>
+                            <Ionicons name="location-outline" size={12} color="#9098B1" />
+                            <Text style={styles.productLocation} numberOfLines={1}>
+                              {prod.location || 'Pilar'}
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </ScrollView>
         )}
 

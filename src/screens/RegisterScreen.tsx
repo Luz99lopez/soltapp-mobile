@@ -36,6 +36,25 @@ export default function RegisterScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showLoginLink, setShowLoginLink] = useState<boolean>(false);
 
+  // Redirección automática si ya hay sesión iniciada
+  React.useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.replace('/home' as any);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
+        router.replace('/home' as any);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
   // Validación de formato de correo con expresión regular (RegEx)
   const isValidEmail = (emailStr: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

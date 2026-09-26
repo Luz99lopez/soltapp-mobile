@@ -9,18 +9,20 @@ import { makeRedirectUri } from 'expo-auth-session';
  * - Entorno de desarrollo Expo Go
  */
 export function getAuthRedirectUri(path: string = 'home'): string {
-  // Dominio personalizado configurable por variable de entorno o fallback
-  const customDomain = process.env.EXPO_PUBLIC_AUTH_DOMAIN || 'auth.soltapp.com.ar';
-
   if (Platform.OS === 'web') {
-    // Si estamos en un navegador en producción o dominio personalizado
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+      const isLocalIp = /^10\./.test(hostname) || /^192\.168\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) || hostname.endsWith('.local');
+
+      // Si estamos en entorno de desarrollo local (localhost o IP de red local)
+      if (isLocalhost || isLocalIp) {
+        return `${window.location.origin}/${path}`;
+      }
+
+      // En producción web o dominio personalizado
+      const customDomain = process.env.EXPO_PUBLIC_AUTH_DOMAIN || 'auth.soltapp.com.ar';
       return `https://${customDomain}/${path}`;
-    }
-    
-    // Desarrollo local Web (localhost)
-    if (typeof window !== 'undefined' && window.location.origin) {
-      return `${window.location.origin}/${path}`;
     }
   }
 

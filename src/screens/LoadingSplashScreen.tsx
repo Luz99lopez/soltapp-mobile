@@ -8,6 +8,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { supabase } from '../supabase';
+
 // Isotipo blanco oficial de Soltapp
 import IsotipoBlanco from '../../assets/svgs/Isotipo blanco 1.svg';
 
@@ -38,23 +40,39 @@ export default function LoadingSplashScreen() {
       }),
     ]).start();
 
-    // 2. Transición obligatoria a la pantalla de Login (/login)
-    const timer = setTimeout(() => {
-      if (!isMounted) return;
+    // 2. Comprobar sesión de Supabase (OAuth o sesión persistida)
+    const checkSessionAndNavigate = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        setTimeout(() => {
+          if (!isMounted) return;
 
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 350,
-        useNativeDriver: true,
-      }).start(() => {
-        if (!isMounted) return;
-        router.replace('/login' as any);
-      });
-    }, 1500);
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 350,
+            useNativeDriver: true,
+          }).start(() => {
+            if (!isMounted) return;
+            if (session) {
+              router.replace('/home' as any);
+            } else {
+              router.replace('/login' as any);
+            }
+          });
+        }, 1200);
+      } catch {
+        setTimeout(() => {
+          if (!isMounted) return;
+          router.replace('/login' as any);
+        }, 1200);
+      }
+    };
+
+    checkSessionAndNavigate();
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
     };
   }, [fadeAnim, scaleAnim, router]);
 

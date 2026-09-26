@@ -36,6 +36,25 @@ export default function LoginScreen() {
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Redirección automática si el usuario ya está autenticado o completa OAuth
+  React.useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
+        router.replace('/home' as any);
+      }
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.replace('/home' as any);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
   // Validación de formato de correo con expresión regular (RegEx)
   const isValidEmail = (emailStr: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -186,6 +205,9 @@ export default function LoginScreen() {
           provider,
           options: {
             redirectTo: redirectUrl,
+            queryParams: {
+              prompt: 'select_account',
+            },
           },
         });
         if (error) throw error;
@@ -198,6 +220,9 @@ export default function LoginScreen() {
         options: {
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',
+          },
         },
       });
 
