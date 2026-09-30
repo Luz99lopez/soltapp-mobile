@@ -20,6 +20,7 @@ import { supabase } from '../supabase';
 import { fetchHomeProducts, ProductListItem } from '../services';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
 import InboxView from '../components/InboxView';
+import UploadProductView from '../components/UploadProductView';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
 import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
@@ -92,6 +93,12 @@ export default function HomeScreen() {
   useEffect(() => {
     if (params?.tab === 'inbox') {
       setActiveTab('inbox');
+    } else if (params?.tab === 'upload') {
+      setActiveTab('upload');
+    } else if (params?.tab === 'profile') {
+      setActiveTab('profile');
+    } else if (params?.tab === 'favorites') {
+      setActiveTab('favorites');
     }
   }, [params?.tab]);
   const [profileSubView, setProfileSubView] = useState<'edit' | 'public'>('edit');
@@ -475,6 +482,17 @@ export default function HomeScreen() {
                   sellerName: conv.sellerName,
                 },
               } as any);
+            }}
+          />
+        ) : activeTab === 'upload' ? (
+          /* ========================================================= */
+          /* VISTA SUBIR PRODUCTO / ANUNCIO (Figma Referencia)        */
+          /* ========================================================= */
+          <UploadProductView
+            userLocation={editLocation || 'C1629 Pilar'}
+            onProductCreated={() => {
+              setActiveTab('home');
+              loadProducts();
             }}
           />
         ) : (
