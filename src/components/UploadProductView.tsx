@@ -115,6 +115,39 @@ export default function UploadProductView({
       });
   }, []);
 
+  // Función auxiliar para convertir cualquier imagen a Data URI (Base64) de forma universal
+  const convertAssetToDataUri = async (asset: ImagePicker.ImagePickerAsset): Promise<string> => {
+    if (asset.base64) {
+      const mime = asset.mimeType || 'image/jpeg';
+      return `data:${mime};base64,${asset.base64}`;
+    }
+
+    if (asset.uri) {
+      // Si estamos en Web o es un blob: / file:
+      try {
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (typeof reader.result === 'string') {
+              resolve(reader.result);
+            } else {
+              resolve(asset.uri);
+            }
+          };
+          reader.onerror = () => resolve(asset.uri);
+          reader.readAsDataURL(blob);
+        });
+      } catch (err) {
+        console.warn('[convertAssetToDataUri] Fallback to raw uri:', err);
+        return asset.uri;
+      }
+    }
+
+    return asset.uri;
+  };
+
   // Selección de fotos con ImagePicker
   const handlePickImages = async () => {
     try {
@@ -127,13 +160,16 @@ export default function UploadProductView({
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
-        quality: 0.8,
+        base64: true,
+        quality: 0.6,
         selectionLimit: 10 - photos.length,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const newUris = result.assets.map((asset) => asset.uri);
-        setPhotos((prev) => [...prev, ...newUris].slice(0, 10));
+        const converted = await Promise.all(
+          result.assets.map((asset) => convertAssetToDataUri(asset))
+        );
+        setPhotos((prev) => [...prev, ...converted].slice(0, 10));
       }
     } catch (err: any) {
       console.error('[UploadProductView.handlePickImages] Error:', err);

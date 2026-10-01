@@ -118,14 +118,43 @@ export default function HomeScreen() {
     return currency?.toUpperCase() === 'USD' ? `USD ${formatted}` : `$ ${formatted}`;
   };
 
-  // Helper para obtener imagen de portada con fallback
-  const getProductCoverImage = (prod: ProductListItem) => {
-    if (prod.cover_image) return prod.cover_image;
-    if (prod.images && prod.images.length > 0) {
-      const cover = prod.images.find((img) => img.is_cover);
-      return cover ? cover.image_url : prod.images[0].image_url;
+  // Fallback contextual de imagen según título o categoría
+  const getContextualFallback = (title: string = '', categoryName: string = '') => {
+    const text = `${title} ${categoryName}`.toLowerCase();
+    if (text.includes('bici') || text.includes('cannondale') || text.includes('mountain') || text.includes('r29')) {
+      return 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=600&q=80';
+    }
+    if (text.includes('figura') || text.includes('twitch') || text.includes('league') || text.includes('lol') || text.includes('juego') || text.includes('anime')) {
+      return 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&q=80';
+    }
+    if (text.includes('iphone') || text.includes('celular') || text.includes('telefono') || text.includes('apple') || text.includes('samsung')) {
+      return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=600&q=80';
+    }
+    if (text.includes('auto') || text.includes('volkswagen') || text.includes('gol') || text.includes('vehiculo') || text.includes('coche')) {
+      return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80';
+    }
+    if (text.includes('zapatilla') || text.includes('nike') || text.includes('ropa') || text.includes('moda')) {
+      return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&q=80';
     }
     return DEFAULT_FALLBACK_IMAGE;
+  };
+
+  // Helper para obtener imagen de portada con fallback inteligente
+  const getProductCoverImage = (prod: ProductListItem) => {
+    let url = prod.cover_image;
+    if (!url && prod.images && prod.images.length > 0) {
+      const cover = prod.images.find((img) => img.is_cover);
+      url = cover ? cover.image_url : prod.images[0].image_url;
+    }
+    if (
+      !url ||
+      typeof url !== 'string' ||
+      url.startsWith('blob:') ||
+      (Platform.OS === 'web' && url.startsWith('file:///'))
+    ) {
+      return getContextualFallback(prod.title, prod.category?.name);
+    }
+    return url;
   };
 
   // Filtrado de publicaciones por barra de búsqueda
@@ -139,8 +168,9 @@ export default function HomeScreen() {
     );
   });
 
-  const nearbyProducts = filteredProducts.slice(0, 4);
-  const recentProducts = filteredProducts.length > 4 ? filteredProducts.slice(4) : filteredProducts;
+  // Distribución de productos en secciones sin duplicación innecesaria
+  const nearbyProducts = filteredProducts.length > 2 ? filteredProducts.slice(0, 2) : filteredProducts;
+  const recentProducts = filteredProducts.length > 2 ? filteredProducts.slice(2) : filteredProducts;
 
   const [favorites, setFavorites] = useState<string[]>([]);
   const [categoriesModalVisible, setCategoriesModalVisible] = useState<boolean>(false);
