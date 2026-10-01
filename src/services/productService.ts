@@ -1,3 +1,4 @@
+import { decode } from 'base64-arraybuffer';
 import { supabase } from '../supabase';
 import {
   Product,
@@ -7,7 +8,81 @@ import {
   UpdateProductInput,
   ProductFilters,
   ProductStatus,
+  ProductImageInput,
 } from '../types/database.types';
+
+/**
+ * Sube una imagen (Data URI base64, Blob, File o URI local) a Supabase Storage
+ * en el bucket público 'product-images' y obtiene su URL pública.
+ */
+export async function uploadProductImageToStorage(
+  productId: string,
+  imageInput: string | ProductImageInput,
+  index: number = 0
+): Promise<string> {
+  const rawUrl = typeof imageInput === 'string' ? imageInput : imageInput.image_url;
+
+  // Si ya es una URL remota de internet pública (por ej. CDN externo o ya en storage)
+  if (
+    rawUrl.startsWith('https://') &&
+    !rawUrl.startsWith('https://localhost') &&
+    !rawUrl.includes('127.0.0.1')
+  ) {
+    return rawUrl;
+  }
+
+  let fileExt = 'jpg';
+  let contentType = 'image/jpeg';
+  let uploadPayload: Blob | ArrayBuffer;
+
+  if (rawUrl.startsWith('data:')) {
+    const matches = rawUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      contentType = matches[1];
+      const subtype = contentType.split('/')[1] || 'jpeg';
+      fileExt = subtype === 'jpeg' ? 'jpg' : subtype;
+      uploadPayload = decode(matches[2]);
+    } else {
+      const res = await fetch(rawUrl);
+      uploadPayload = await res.blob();
+    }
+  } else {
+    // URI local (file://, content://, blob:)
+    const res = await fetch(rawUrl);
+    const blob = await res.blob();
+    if (blob.type) {
+      contentType = blob.type;
+      const subtype = contentType.split('/')[1] || 'jpeg';
+      fileExt = subtype === 'jpeg' ? 'jpg' : subtype;
+    }
+    uploadPayload = blob;
+  }
+
+  const timestamp = Date.now();
+  const fileName = `${productId}/${timestamp}_${index}.${fileExt}`;
+
+  const { data, error: uploadError } = await supabase.storage
+    .from('product-images')
+    .upload(fileName, uploadPayload, {
+      contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    console.error(`[uploadProductImageToStorage] Error al subir ${fileName} al bucket product-images:`, uploadError);
+    throw new Error(`Error al subir imagen a Storage (${fileName}): ${uploadError.message}`);
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from('product-images').getPublicUrl(fileName);
+
+  if (!publicUrl) {
+    throw new Error('No se pudo obtener la URL pública de la imagen en Supabase Storage.');
+  }
+
+  return publicUrl;
+}
 
 /**
  * Helper para normalizar la imagen de portada y ordenar la lista de imágenes
@@ -264,36 +339,50 @@ export const productService = {
       throw new Error(`Error al crear publicación: ${productError?.message}`);
     }
 
-    // 3. Inserción secuencial de imágenes en public.product_images
+    // 3. Subida a Supabase Storage y guardado de URLs públicas en product_images
     let insertedImages: any[] = [];
     if (input.images && input.images.length > 0) {
-      const imagesToInsert = input.images.map((img, index) => {
-        if (typeof img === 'string') {
-          return {
-            product_id: createdProduct.id,
-            image_url: img,
-            position: index,
-            is_cover: index === 0,
-          };
+      try {
+        const uploadedImages: { image_url: string; position: number; is_cover: boolean }[] = [];
+
+        for (let i = 0; i < input.images.length; i++) {
+          const rawImg = input.images[i];
+          const position = typeof rawImg === 'object' && rawImg.position !== undefined ? rawImg.position : i;
+          const is_cover = typeof rawImg === 'object' && rawImg.is_cover !== undefined ? rawImg.is_cover : i === 0;
+
+          // Subir a Storage y obtener publicUrl
+          const publicUrl = await uploadProductImageToStorage(createdProduct.id, rawImg, i);
+
+          uploadedImages.push({
+            image_url: publicUrl,
+            position,
+            is_cover,
+          });
         }
-        return {
+
+        const imagesToInsert = uploadedImages.map((img) => ({
           product_id: createdProduct.id,
           image_url: img.image_url,
-          position: img.position ?? index,
-          is_cover: img.is_cover !== undefined ? img.is_cover : index === 0,
-        };
-      });
+          position: img.position,
+          is_cover: img.is_cover,
+        }));
 
-      const { data: imgData, error: imgError } = await supabase
-        .from('product_images')
-        .insert(imagesToInsert)
-        .select();
+        const { data: imgData, error: imgError } = await supabase
+          .from('product_images')
+          .insert(imagesToInsert)
+          .select();
 
-      if (imgError) {
-        console.error('[productService.createProduct] Error insertando imágenes:', imgError.message);
-        // No cancelamos el producto, pero advertimos
-      } else {
-        insertedImages = imgData || [];
+        if (imgError) {
+          console.error('[productService.createProduct] Error insertando en product_images:', imgError.message);
+          throw new Error(`Error al registrar imágenes en la base de datos: ${imgError.message}`);
+        } else {
+          insertedImages = imgData || [];
+        }
+      } catch (uploadError: any) {
+        console.error('[productService.createProduct] Falló la subida de imágenes a Storage:', uploadError);
+        // Abortar y limpiar el producto huérfano
+        await supabase.from('products').delete().eq('id', createdProduct.id);
+        throw uploadError;
       }
     }
 

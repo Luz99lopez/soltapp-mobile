@@ -8,6 +8,7 @@
     "@react-navigation/bottom-tabs": "^7.19.2",
     "@react-navigation/native": "^7.4.1",
     "@supabase/supabase-js": "^2.116.0",
+    "base64-arraybuffer": "^1.0.2",
     "expo": "~57.0.24",
     "expo-auth-session": "~57.0.12",
     "expo-constants": "~57.0.19",
