@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { productService, categoryService } from '../services';
+import { productService, categoryService, storageService } from '../services';
 import { Category, ProductCondition } from '../types/database.types';
 
 // Opciones de condición de producto
@@ -74,7 +74,7 @@ export default function UploadProductView({
   // Sección 1: Información
   const [quickInfo, setQuickInfo] = useState('');
 
-  // Sección 2: Fotos
+  // Sección 2: Fotos (URIs locales para preview en la galería)
   const [photos, setPhotos] = useState<string[]>([]);
 
   // Sección 3: Categoría y Datos Principales
@@ -98,6 +98,7 @@ export default function UploadProductView({
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
 
@@ -115,40 +116,7 @@ export default function UploadProductView({
       });
   }, []);
 
-  // Función auxiliar para convertir cualquier imagen a Data URI (Base64) de forma universal
-  const convertAssetToDataUri = async (asset: ImagePicker.ImagePickerAsset): Promise<string> => {
-    if (asset.base64) {
-      const mime = asset.mimeType || 'image/jpeg';
-      return `data:${mime};base64,${asset.base64}`;
-    }
-
-    if (asset.uri) {
-      // Si estamos en Web o es un blob: / file:
-      try {
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        return new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            if (typeof reader.result === 'string') {
-              resolve(reader.result);
-            } else {
-              resolve(asset.uri);
-            }
-          };
-          reader.onerror = () => resolve(asset.uri);
-          reader.readAsDataURL(blob);
-        });
-      } catch (err) {
-        console.warn('[convertAssetToDataUri] Fallback to raw uri:', err);
-        return asset.uri;
-      }
-    }
-
-    return asset.uri;
-  };
-
-  // Selección de fotos con ImagePicker
+  // Selección de fotos con ImagePicker (almacena URIs locales para preview ágil)
   const handlePickImages = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -160,16 +128,13 @@ export default function UploadProductView({
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
-        base64: true,
-        quality: 0.6,
+        quality: 0.8,
         selectionLimit: 10 - photos.length,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const converted = await Promise.all(
-          result.assets.map((asset) => convertAssetToDataUri(asset))
-        );
-        setPhotos((prev) => [...prev, ...converted].slice(0, 10));
+        const selectedUris = result.assets.map((asset) => asset.uri);
+        setPhotos((prev) => [...prev, ...selectedUris].slice(0, 10));
       }
     } catch (err: any) {
       console.error('[UploadProductView.handlePickImages] Error:', err);
@@ -182,7 +147,7 @@ export default function UploadProductView({
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Publicar Producto en Supabase
+  // Publicar Producto en Supabase con subida previa al Storage
   const handlePublish = async () => {
     setErrorMessage(null);
 
@@ -204,9 +169,22 @@ export default function UploadProductView({
     }
 
     setIsSubmitting(true);
+    setUploadStatus('Subiendo imágenes al almacenamiento...');
+
     try {
+      let finalPublicUrls: string[] = [];
+
+      // 1. Subida al bucket de Supabase Storage
+      if (photos.length > 0) {
+        finalPublicUrls = await storageService.uploadMultipleProductImages(photos, 'products');
+      } else {
+        finalPublicUrls = [DEFAULT_PRODUCT_FALLBACK];
+      }
+
+      setUploadStatus('Guardando publicación en la base de datos...');
+
+      // 2. Inserción en la base de datos guardando únicamente las URLs públicas
       const finalDescription = description.trim() || quickInfo.trim() || cleanTitle;
-      const imagesToUpload = photos.length > 0 ? photos : [DEFAULT_PRODUCT_FALLBACK];
 
       await productService.createProduct({
         category_id: selectedCategory.id,
@@ -216,7 +194,7 @@ export default function UploadProductView({
         currency: currency,
         condition: condition,
         location: location.trim() || 'Pilar',
-        images: imagesToUpload,
+        images: finalPublicUrls,
       });
 
       setSuccessModalVisible(true);
@@ -225,6 +203,7 @@ export default function UploadProductView({
       setErrorMessage(err.message || 'Ocurrió un error al publicar el producto. Inténtalo de nuevo.');
     } finally {
       setIsSubmitting(false);
+      setUploadStatus('');
     }
   };
 
@@ -532,7 +511,10 @@ export default function UploadProductView({
           disabled={isSubmitting}
         >
           {isSubmitting ? (
-            <ActivityIndicator size="small" color="#1F232E" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <ActivityIndicator size="small" color="#1F232E" style={{ marginRight: 8 }} />
+              <Text style={styles.publishBtnText}>{uploadStatus || 'Publicando...'}</Text>
+            </View>
           ) : (
             <Text style={styles.publishBtnText}>Publicar</Text>
           )}

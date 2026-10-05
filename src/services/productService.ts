@@ -1,5 +1,5 @@
-import { decode } from 'base64-arraybuffer';
 import { supabase } from '../supabase';
+import { storageService } from './storageService';
 import {
   Product,
   ProductListItem,
@@ -21,67 +21,7 @@ export async function uploadProductImageToStorage(
   index: number = 0
 ): Promise<string> {
   const rawUrl = typeof imageInput === 'string' ? imageInput : imageInput.image_url;
-
-  // Si ya es una URL remota de internet pública (por ej. CDN externo o ya en storage)
-  if (
-    rawUrl.startsWith('https://') &&
-    !rawUrl.startsWith('https://localhost') &&
-    !rawUrl.includes('127.0.0.1')
-  ) {
-    return rawUrl;
-  }
-
-  let fileExt = 'jpg';
-  let contentType = 'image/jpeg';
-  let uploadPayload: Blob | ArrayBuffer;
-
-  if (rawUrl.startsWith('data:')) {
-    const matches = rawUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-    if (matches && matches.length === 3) {
-      contentType = matches[1];
-      const subtype = contentType.split('/')[1] || 'jpeg';
-      fileExt = subtype === 'jpeg' ? 'jpg' : subtype;
-      uploadPayload = decode(matches[2]);
-    } else {
-      const res = await fetch(rawUrl);
-      uploadPayload = await res.blob();
-    }
-  } else {
-    // URI local (file://, content://, blob:)
-    const res = await fetch(rawUrl);
-    const blob = await res.blob();
-    if (blob.type) {
-      contentType = blob.type;
-      const subtype = contentType.split('/')[1] || 'jpeg';
-      fileExt = subtype === 'jpeg' ? 'jpg' : subtype;
-    }
-    uploadPayload = blob;
-  }
-
-  const timestamp = Date.now();
-  const fileName = `${productId}/${timestamp}_${index}.${fileExt}`;
-
-  const { data, error: uploadError } = await supabase.storage
-    .from('product-images')
-    .upload(fileName, uploadPayload, {
-      contentType,
-      upsert: false,
-    });
-
-  if (uploadError) {
-    console.error(`[uploadProductImageToStorage] Error al subir ${fileName} al bucket product-images:`, uploadError);
-    throw new Error(`Error al subir imagen a Storage (${fileName}): ${uploadError.message}`);
-  }
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from('product-images').getPublicUrl(fileName);
-
-  if (!publicUrl) {
-    throw new Error('No se pudo obtener la URL pública de la imagen en Supabase Storage.');
-  }
-
-  return publicUrl;
+  return storageService.uploadProductImage(rawUrl, productId);
 }
 
 /**
