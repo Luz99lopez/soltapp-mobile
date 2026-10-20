@@ -274,7 +274,7 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    Alert.alert('Recuperar Contraseña', 'Redirigiendo a recuperación de clave...');
+    router.push('/forgot-password' as any);
   };
 
   const handleGoToRegister = () => {
