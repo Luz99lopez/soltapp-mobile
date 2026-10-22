@@ -8,7 +8,10 @@
     "scheme": "soltapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Soltapp necesita acceso a tu ubicación para situar tus productos en el mapa y mostrarlos a compradores cercanos."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,6 +20,10 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -34,7 +41,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Soltapp necesita acceso a tu ubicación para situar tus productos en el mapa y mostrarlos a compradores cercanos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

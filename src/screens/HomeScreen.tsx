@@ -19,6 +19,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
 import { fetchHomeProducts, ProductListItem } from '../services';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
+import BottomNavbar, { BottomNavTab } from '../components/BottomNavbar';
+import TopNavbar from '../components/TopNavbar';
 import InboxView from '../components/InboxView';
 import UploadProductView from '../components/UploadProductView';
 
@@ -296,75 +298,23 @@ export default function HomeScreen() {
 
       <View style={styles.container}>
         {/* ========================================================= */}
-        {/* 1. HEADER NAVBAR SUPERIOR (Exacto al diseño de referencia) */}
+        {/* 1. HEADER NAVBAR SUPERIOR OFICIAL (COMPARTIDO)           */}
         {/* ========================================================= */}
-        <View style={styles.header}>
-          {/* Isotipo con fondo turquesa oficial */}
-          <TouchableOpacity
-            style={styles.logoWrapper}
-            activeOpacity={0.8}
-            onPress={() => setActiveTab('home')}
-          >
-            <IsotipoConFondo width={38} height={38} />
-          </TouchableOpacity>
-
-          {/* Barra de búsqueda píldora con borde gris */}
-          <View style={styles.searchBar}>
-            <BuscarIcon width={18} height={18} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar en todas las categorías"
-              placeholderTextColor="#1F232E"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Feather name="x" size={15} color="#9098B1" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Acciones a la derecha: Icono de Grilla/Ver todo 2x2 + Avatar circular */}
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.gridIconButton}
-              onPress={() => setCategoriesModalVisible(true)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <VerTodoIcon width={24} height={24} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.avatarCircle,
-                activeTab === 'profile' && styles.avatarCircleActive,
-              ]}
-              onPress={() => {
-                if (activeTab === 'profile') {
-                  // Si ya está en el menú "Tú", ir a la pantalla de Perfil completa
-                  router.push('/profile' as any);
-                } else {
-                  // Abrir el menú "Tú"
-                  setActiveTab('profile');
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              {userAvatar ? (
-                <Image source={{ uri: userAvatar }} style={styles.headerAvatarImg} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarInitial}>
-                    {userName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+        <TopNavbar
+          activeScreen={activeTab === 'profile' ? 'profile' : 'home'}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onOpenCategories={() => setCategoriesModalVisible(true)}
+          userAvatar={userAvatar}
+          userName={userName}
+          onAvatarPress={() => {
+            if (activeTab === 'profile') {
+              router.push('/profile' as any);
+            } else {
+              setActiveTab('profile');
+            }
+          }}
+        />
 
         {/* ========================================================= */}
         {/* 2. CONTENIDO PRINCIPAL: FEED HOME vs MENÚ "TÚ"            */}
@@ -724,91 +674,8 @@ export default function HomeScreen() {
         )}
 
         {/* ========================================================= */}
-        {/* 3. BARRA DE NAVEGACIÓN INFERIOR (Exacto al diseño) */}
-        {/* ========================================================= */}
-        <View style={styles.bottomNavContainer}>
-          <View style={styles.bottomNav}>
-            {/* 1. Inicio */}
-            <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => setActiveTab('home')}
-              activeOpacity={0.7}
-            >
-              <HomeIcon
-                width={24}
-                height={24}
-                stroke={activeTab === 'home' ? PRIMARY_COLOR : '#9098B1'}
-              />
-              <Text style={[styles.navLabel, activeTab === 'home' && styles.navLabelActive]}>
-                Inicio
-              </Text>
-            </TouchableOpacity>
-
-            {/* 2. Favoritos */}
-            <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => setActiveTab('favorites')}
-              activeOpacity={0.7}
-            >
-              <CorazonIcon
-                width={24}
-                height={24}
-                fill={activeTab === 'favorites' ? PRIMARY_COLOR : '#9098B1'}
-              />
-              <Text style={[styles.navLabel, activeTab === 'favorites' && styles.navLabelActive]}>
-                Favoritos
-              </Text>
-            </TouchableOpacity>
-
-            {/* 3. Subir */}
-            <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => setActiveTab('upload')}
-              activeOpacity={0.7}
-            >
-              <MasIcon
-                width={24}
-                height={24}
-                stroke={activeTab === 'upload' ? PRIMARY_COLOR : '#9098B1'}
-              />
-              <Text style={[styles.navLabel, activeTab === 'upload' && styles.navLabelActive]}>
-                Subir
-              </Text>
-            </TouchableOpacity>
-
-            {/* 4. Buzón */}
-            <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => setActiveTab('inbox')}
-              activeOpacity={0.7}
-            >
-              <MailIcon
-                width={24}
-                height={24}
-                stroke={activeTab === 'inbox' ? PRIMARY_COLOR : '#9098B1'}
-              />
-              <Text style={[styles.navLabel, activeTab === 'inbox' && styles.navLabelActive]}>
-                Buzón
-              </Text>
-            </TouchableOpacity>
-
-            {/* 5. Perfil */}
-            <TouchableOpacity
-              style={styles.navItem}
-              onPress={() => setActiveTab('profile')}
-              activeOpacity={0.7}
-            >
-              <AvatarIcon
-                width={24}
-                height={24}
-                fill={activeTab === 'profile' ? PRIMARY_COLOR : '#9098B1'}
-              />
-              <Text style={[styles.navLabel, activeTab === 'profile' && styles.navLabelActive]}>
-                Perfil
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* 3. BARRA DE NAVEGACIÓN INFERIOR (COMPONENTE COMPARTIDO) */}
+        <BottomNavbar activeTab={activeTab} onTabPress={(tab: BottomNavTab) => setActiveTab(tab)} />
 
         {/* Modal Desplegable de Categorías */}
         <CategoriesMenuModal
