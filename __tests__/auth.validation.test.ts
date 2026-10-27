@@ -1,9 +1,11 @@
-import {
-    AUTH_MESSAGES,
-    EMAIL_REGEX,
-    loginSchema,
-    primerError,
-    registerSchema,
+  import {
+  AUTH_MESSAGES,
+  EMAIL_REGEX,
+  forgotPasswordSchema,
+  loginSchema,
+  primerError,
+  registerSchema,
+  resetPasswordSchema,
 } from '../src/utils/validation';
 
 const registroValido = {
@@ -139,5 +141,78 @@ describe('Registro (AUT-01 a AUT-05)', () => {
       confirmPassword: '456',
     });
     expect(primerError(resultado)).toBe(AUTH_MESSAGES.passwordCorta);
+  });
+});
+
+describe('Cambio de contraseña (AUT-22 a AUT-24)', () => {
+  const cambioValido = { password: '12345678', confirmPassword: '12345678' };
+
+  it('acepta dos contraseñas iguales de 8 caracteres', () => {
+    expect(resetPasswordSchema.safeParse(cambioValido).success).toBe(true);
+  });
+
+  it.each(['password', 'confirmPassword'] as const)(
+    'AUT-22: rechaza el campo vacío "%s"',
+    (campo) => {
+      const resultado = resetPasswordSchema.safeParse({ ...cambioValido, [campo]: '' });
+      expect(primerError(resultado)).toBe(AUTH_MESSAGES.cambioCamposVacios);
+    }
+  );
+
+  it('AUT-22: rechaza ambos campos vacíos', () => {
+    const resultado = resetPasswordSchema.safeParse({ password: '', confirmPassword: '' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.cambioCamposVacios);
+  });
+
+  it('AUT-23: rechaza una contraseña de 7 caracteres', () => {
+    const resultado = resetPasswordSchema.safeParse({ password: '1234567', confirmPassword: '1234567' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.passwordCorta);
+  });
+
+  it('AUT-23: acepta una contraseña de exactamente 8 caracteres (límite)', () => {
+    expect(resetPasswordSchema.safeParse({ password: 'abcdefgh', confirmPassword: 'abcdefgh' }).success).toBe(true);
+  });
+
+  it('AUT-24: rechaza contraseñas que no coinciden con el mensaje propio de esta pantalla', () => {
+    const resultado = resetPasswordSchema.safeParse({ password: '12345678', confirmPassword: '87654321' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.cambioPasswordsDistintas);
+  });
+
+  it('el mensaje de contraseñas distintas no es el mismo que en el registro', () => {
+    expect(AUTH_MESSAGES.cambioPasswordsDistintas).not.toBe(AUTH_MESSAGES.passwordsDistintas);
+  });
+
+  it('prioriza la contraseña corta sobre la diferencia entre contraseñas', () => {
+    const resultado = resetPasswordSchema.safeParse({ password: '123', confirmPassword: '456' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.passwordCorta);
+  });
+});
+
+describe('Recuperar contraseña (AUT-28 y AUT-29)', () => {
+  it('acepta un email válido', () => {
+    expect(forgotPasswordSchema.safeParse({ email: 'ana@correo.com' }).success).toBe(true);
+  });
+
+  it('ignora los espacios alrededor de un email válido', () => {
+    expect(forgotPasswordSchema.safeParse({ email: '  ana@correo.com  ' }).success).toBe(true);
+  });
+
+  it('AUT-28: rechaza el email vacío', () => {
+    const resultado = forgotPasswordSchema.safeParse({ email: '' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.recuperarEmailVacio);
+  });
+
+  it('AUT-28: un email de solo espacios cuenta como vacío', () => {
+    const resultado = forgotPasswordSchema.safeParse({ email: '   ' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.recuperarEmailVacio);
+  });
+
+  it('AUT-29: rechaza un email con formato inválido', () => {
+    const resultado = forgotPasswordSchema.safeParse({ email: 'usuario@' });
+    expect(primerError(resultado)).toBe(AUTH_MESSAGES.recuperarEmailInvalido);
+  });
+
+  it('el mensaje de email inválido no es el mismo que en login y registro', () => {
+    expect(AUTH_MESSAGES.recuperarEmailInvalido).not.toBe(AUTH_MESSAGES.emailInvalido);
   });
 });

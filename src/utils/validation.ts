@@ -1,25 +1,34 @@
 import { z } from 'zod';
 
 /**
- * Reglas de validación de Login y Registro de Soltapp.
+ * Reglas de validación de las pantallas de autenticación de Soltapp:
+ * Login, Registro, Recuperar contraseña y Cambiar contraseña.
  *
  * Copian las reglas que hoy están escritas dentro de
- * src/screens/LoginScreen.tsx y src/screens/RegisterScreen.tsx.
+ * src/screens/LoginScreen.tsx, RegisterScreen.tsx,
+ * ForgotPasswordScreen.tsx y ResetPasswordScreen.tsx.
  * No usan nada de React Native, así que se prueban directo con Jest.
  */
 
-// Misma expresión regular que usa isValidEmail en las dos pantallas.
+// Misma expresión regular que usa isValidEmail en las pantallas.
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Mínimo de caracteres de la contraseña en el registro.
+// Mínimo de caracteres de la contraseña (registro y cambio de contraseña).
 export const MIN_PASSWORD_LENGTH = 8;
 
 // Mensajes exactos que muestra la app.
 export const AUTH_MESSAGES = {
+  // Login y registro
   camposVacios: 'Por favor completa todos los campos.',
   emailInvalido: 'El correo es inválido',
   passwordCorta: 'La contraseña debe tener al menos 8 caracteres.',
   passwordsDistintas: 'Las contraseñas no coinciden.',
+  // Recuperar contraseña (ForgotPasswordScreen)
+  recuperarEmailVacio: 'Por favor ingresa tu dirección de email.',
+  recuperarEmailInvalido: 'Ingresa un correo electrónico válido.',
+  // Cambiar contraseña (ResetPasswordScreen)
+  cambioCamposVacios: 'Por favor completa ambos campos de contraseña.',
+  cambioPasswordsDistintas: 'Las contraseñas no coinciden. Verifícalas e inténtalo de nuevo.',
 } as const;
 
 /**
@@ -75,6 +84,55 @@ export const registerSchema = z
         code: 'custom',
         path: ['confirmPassword'],
         message: AUTH_MESSAGES.passwordsDistintas,
+      });
+    }
+  });
+
+/**
+ * Recuperar contraseña (handleSendCode): 1) email vacío  2) formato de email.
+ * Los mensajes son distintos de los de login y registro.
+ */
+export const forgotPasswordSchema = z
+  .object({
+    email: z.string(),
+  })
+  .superRefine((valores, ctx) => {
+    const email = valores.email.trim();
+
+    if (!email) {
+      ctx.addIssue({ code: 'custom', message: AUTH_MESSAGES.recuperarEmailVacio });
+      return;
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      ctx.addIssue({ code: 'custom', path: ['email'], message: AUTH_MESSAGES.recuperarEmailInvalido });
+    }
+  });
+
+/**
+ * Cambiar contraseña (handleUpdatePassword):
+ * 1) campos vacíos  2) 8+ caracteres  3) contraseñas iguales.
+ * Nota: la condición exacta de "vacíos" está una línea antes de la que se revisó;
+ * se asume que es !password || !confirmPassword.
+ */
+export const resetPasswordSchema = z
+  .object({
+    password: z.string(),
+    confirmPassword: z.string(),
+  })
+  .superRefine((valores, ctx) => {
+    if (!valores.password || !valores.confirmPassword) {
+      ctx.addIssue({ code: 'custom', message: AUTH_MESSAGES.cambioCamposVacios });
+      return;
+    }
+    if (valores.password.length < MIN_PASSWORD_LENGTH) {
+      ctx.addIssue({ code: 'custom', path: ['password'], message: AUTH_MESSAGES.passwordCorta });
+      return;
+    }
+    if (valores.password !== valores.confirmPassword) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['confirmPassword'],
+        message: AUTH_MESSAGES.cambioPasswordsDistintas,
       });
     }
   });
