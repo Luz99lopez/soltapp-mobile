@@ -3,4 +3,5 @@ export * from './categoryService';
 export * from './productService';
 export * from './storageService';
 export * from './userService';
+export * from './locationService';
 export * from '../types/database.types';

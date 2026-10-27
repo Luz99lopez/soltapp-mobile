@@ -134,6 +134,70 @@ export const storageService = {
    * @param uris Lista de URIs locales de imágenes
    * @param folder Carpeta dentro del bucket
    */
+  /**
+   * Sube una foto de perfil/avatar a Supabase Storage y retorna su URL pública accesible
+   * @param uri URI local (file://, blob:, data:) o URL remota
+   * @param userId ID del usuario para prefijo opcional del archivo
+   */
+  async uploadAvatar(uri: string, userId?: string): Promise<string> {
+    if (!uri) {
+      throw new Error('URI de imagen no proporcionado');
+    }
+
+    // Si ya es una URL remota de Supabase Storage o CDN externo pública, no la volvemos a subir
+    if (
+      (uri.startsWith('https://') || uri.startsWith('http://')) &&
+      !uri.startsWith('http://localhost') &&
+      !uri.includes('127.0.0.1') &&
+      !uri.startsWith('blob:')
+    ) {
+      return uri;
+    }
+
+    const { payload, contentType, extension } = await uriToUploadPayload(uri);
+
+    const prefix = userId ? `${userId}_` : '';
+    const uniqueId = `${prefix}${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    // Intentamos en products/avatars que comparte las políticas RLS de productos
+    const fileName = `products/avatars/${uniqueId}.${extension}`;
+
+    let uploadResult = await supabase.storage
+      .from(PRODUCT_IMAGES_BUCKET)
+      .upload(fileName, payload, {
+        contentType,
+        upsert: false,
+      });
+
+    // Si da error, intentar fallback en carpeta avatars/ directa
+    let finalFileName = fileName;
+    if (uploadResult.error) {
+      console.warn(`[storageService.uploadAvatar] Intento 1 falló (${fileName}):`, uploadResult.error.message);
+      const fallbackName = `avatars/${uniqueId}.${extension}`;
+      const fallbackResult = await supabase.storage
+        .from(PRODUCT_IMAGES_BUCKET)
+        .upload(fallbackName, payload, {
+          contentType,
+          upsert: false,
+        });
+
+      if (fallbackResult.error) {
+        console.error(`[storageService.uploadAvatar] Error definitivo al subir avatar:`, fallbackResult.error);
+        throw new Error(`Error al subir imagen a Supabase Storage: ${fallbackResult.error.message}`);
+      }
+      finalFileName = fallbackName;
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(finalFileName);
+
+    if (!publicUrl) {
+      throw new Error('No se pudo generar la URL pública del avatar en Supabase Storage.');
+    }
+
+    return publicUrl;
+  },
+
   async uploadMultipleProductImages(uris: string[], folder: string = 'products'): Promise<string[]> {
     if (!uris || uris.length === 0) return [];
 
