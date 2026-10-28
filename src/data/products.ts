@@ -19,12 +19,18 @@ export interface Product {
   color?: string;
   details?: string[];
   seller?: Seller;
+  category: string;
+  subcategory: string;
+  description: string;
 }
 
 // Datos Mock de Productos Cercanos
 export const NEARBY_PRODUCTS: Product[] = [
   {
     id: 'p1',
+    description: 'Volkswagen Gol Trend 1.6 MSI. Ubicado en Pilar Centro.',
+    category: 'Autos',
+    subcategory: 'Hatchback',
     brand: 'Volkswagen',
     title: 'Volkswagen Gol Trend 1.6 MSI',
     price: '$ 8.500.000',
@@ -34,6 +40,9 @@ export const NEARBY_PRODUCTS: Product[] = [
   },
   {
     id: 'p2',
+    description: 'iPhone 13 Pro con 128 GB de almacenamiento, color grafito. Ubicado en Pilar, Km 50.',
+    category: 'Celulares y telefonía',
+    subcategory: 'Celulares',
     color: 'Grafito',
     details: ['128GB'],
     title: 'iPhone 13 Pro 128GB Grafito',
@@ -44,6 +53,9 @@ export const NEARBY_PRODUCTS: Product[] = [
   },
   {
     id: 'p3',
+    description: 'Bicicleta mountain bike rodado 29. Ubicada en Del Viso, Pilar.',
+    category: 'Bicicletas',
+    subcategory: 'Mountain bike',
     details: ['Rodado 29'],
     title: 'Bicicleta Rodado 29 Mountain Bike',
     price: '$ 240.000',
@@ -57,6 +69,9 @@ export const NEARBY_PRODUCTS: Product[] = [
 export const RECENT_PRODUCTS: Product[] = [
   {
     id: 'r1',
+    description: 'PlayStation 5 con 2 joysticks. Ubicada en Pilar Point.',
+    category: 'Consolas y videojuegos',
+    subcategory: 'Consolas',
     brand: 'PlayStation',
     details: ['2 joysticks'],
     title: 'PlayStation 5 con 2 Joysticks',
@@ -67,6 +82,9 @@ export const RECENT_PRODUCTS: Product[] = [
   },
   {
     id: 'r2',
+    description: 'Departamento de 2 ambientes con balcón. Ubicado en Pilar Casas.',
+    category: 'Inmobiliaria',
+    subcategory: 'Departamentos',
     details: ['2 ambientes', 'Balcón'],
     title: 'Departamento 2 Ambientes c/ Balcón',
     price: 'USD 65.000',
@@ -76,6 +94,9 @@ export const RECENT_PRODUCTS: Product[] = [
   },
   {
     id: 'r3',
+    description: 'Smart TV Samsung de 50 pulgadas con resolución 4K UHD. Ubicado en Pilar Centro.',
+    category: 'Tecnología y electrónica',
+    subcategory: 'Televisores',
     brand: 'Samsung',
     details: ['50"', '4K', 'UHD'],
     title: 'Smart TV 50" 4K UHD Samsung',
@@ -86,6 +107,9 @@ export const RECENT_PRODUCTS: Product[] = [
   },
   {
     id: 'r4',
+    description: 'Campera de cuero para hombre, talle L. Ubicada en Manuel Alberti.',
+    category: 'Moda y accesorios',
+    subcategory: 'Camperas',
     details: ['Cuero', 'L'],
     title: 'Campera de Cuero Hombre Talle L',
     price: '$ 85.000',

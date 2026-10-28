@@ -49,6 +49,64 @@ function SellerCard({ seller, onChat }: { seller: Seller; onChat: () => void }) 
   );
 }
 
+function ProductDescriptions({ product }: { product: Product }) {
+  const [descriptionOpen, setDescriptionOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(true);
+
+  return (
+    <View style={styles.descriptionBox}>
+      <View style={styles.sectionHeader}>
+        <Text accessibilityRole="header" style={styles.sectionSubtitle}>Descripcion</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${descriptionOpen ? 'Ocultar' : 'Mostrar'} descripción del producto`}
+          accessibilityState={{ expanded: descriptionOpen }}
+          onPress={() => setDescriptionOpen((open) => !open)}
+          style={styles.sectionToggle}
+        >
+          <Ionicons name={descriptionOpen ? 'chevron-up' : 'chevron-down'} size={24} color="#D9D9D9" />
+        </Pressable>
+      </View>
+      {descriptionOpen && <Text style={styles.descriptionText}>{product.description}</Text>}
+      <View style={styles.sectionDivider} />
+      <View style={styles.sectionHeader}>
+        <Text accessibilityRole="header" style={styles.sectionSubtitle}>Ficha del producto</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${detailsOpen ? 'Ocultar' : 'Mostrar'} color y estado`}
+          accessibilityState={{ expanded: detailsOpen }}
+          onPress={() => setDetailsOpen((open) => !open)}
+          style={styles.sectionToggle}
+        >
+          <Ionicons name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={24} color="#D9D9D9" />
+        </Pressable>
+      </View>
+      {detailsOpen && (
+        <View style={styles.detailRows}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Color</Text>
+            <Text style={styles.detailValue}>{product.color?.trim() || 'No especificado'}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Estado</Text>
+            <Text style={styles.detailValue}>{product.condition?.trim() || 'No especificado'}</Text>
+          </View>
+        </View>
+      )}
+      <View style={styles.sectionDivider} />
+      <View style={styles.detailRow}>
+        <Text accessibilityRole="header" style={[styles.sectionSubtitle, styles.fixedDetailLabel]}>Marca</Text>
+        <Text style={styles.detailValue}>{product.brand?.trim() || 'No especificada'}</Text>
+      </View>
+      <View style={styles.sectionDivider} />
+      <View style={styles.detailRow}>
+        <Text accessibilityRole="header" style={[styles.sectionSubtitle, styles.fixedDetailLabel]}>Estado</Text>
+        <Text style={styles.detailValue}>{product.condition?.trim() || 'No especificado'}</Text>
+      </View>
+    </View>
+  );
+}
+
 function ProductGallery({ product }: { product: Product }) {
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -149,6 +207,13 @@ export default function DetalleProducto() {
                 },
               })}
             />
+            <View style={styles.categoryTag}>
+              <Text style={styles.categoryText}>{product.category}</Text>
+            </View>
+            <View style={styles.categoryTag}>
+              <Text style={styles.categoryText}>{product.subcategory}</Text>
+            </View>
+            <ProductDescriptions key={product.id} product={product} />
           </View>
         </ScrollView>
       ) : (
@@ -164,6 +229,33 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   contentContainer: { paddingBottom: 24 },
   productInfo: { paddingHorizontal: 20, gap: 12 },
+  descriptionBox: {
+    width: '100%',
+    borderWidth: 2,
+    borderColor: '#D9D9D9',
+    borderRadius: 10,
+    padding: 10,
+    gap: 10,
+  },
+  sectionSubtitle: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: '#1F232E', textAlign: 'left' },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  sectionToggle: { minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  detailRows: { gap: 10 },
+  fixedDetailLabel: { flex: 1 },
+  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  detailLabel: { flex: 1, fontSize: 15, lineHeight: 23, color: '#1F232E' },
+  detailValue: { flex: 1, fontSize: 15, lineHeight: 23, color: '#1F232E', textAlign: 'right' },
+  descriptionText: { fontSize: 15, lineHeight: 23, color: '#1F232E', textAlign: 'left' },
+  sectionDivider: { height: 2, backgroundColor: '#D9D9D9', alignSelf: 'stretch' },
+  categoryTag: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    borderRadius: 20,
+    backgroundColor: '#D9D9D9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  categoryText: { fontSize: 15, lineHeight: 22, color: '#1F232E', textAlign: 'left', flexShrink: 1 },
   sellerCard: {
     width: '100%',
     borderWidth: 1,
