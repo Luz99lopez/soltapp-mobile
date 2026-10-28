@@ -55,6 +55,10 @@ function RootLayoutNav() {
         <Stack.Screen name="public-profile" options={{ headerShown: false }} />
         <Stack.Screen name="upload" options={{ headerShown: false }} />
         <Stack.Screen name="chat" options={{ headerShown: false }} />
+        <Stack.Screen name="cart" options={{ headerShown: false }} />
+        <Stack.Screen name="compras" options={{ headerShown: false }} />
+        <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="order-flow" options={{ headerShown: false }} />
         <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>

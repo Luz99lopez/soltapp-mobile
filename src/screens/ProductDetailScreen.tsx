@@ -197,13 +197,13 @@ export default function ProductDetailScreen() {
   // Navegar al chat con el vendedor
   const handleOpenChat = () => {
     if (!product) return;
-    const sellerName = product.seller?.full_name || product.seller?.username || 'Vendedor';
+    const seller = product.seller?.full_name || product.seller?.username || 'Vendedor';
     router.push({
       pathname: '/chat',
       params: {
         productTitle: product.title,
         productPrice: formattedPrice,
-        sellerName: sellerName,
+        sellerName: seller,
       },
     } as any);
   };
@@ -217,6 +217,23 @@ export default function ProductDetailScreen() {
       ? 'Como nuevo'
       : product.condition.charAt(0).toUpperCase() + product.condition.slice(1)
     : 'Como nuevo';
+
+  // Navegar al carrito / pantalla de compras
+  const handleBuyProduct = () => {
+    if (!product) return;
+    router.push({
+      pathname: '/cart',
+      params: {
+        productId: product.id,
+        title: product.title,
+        price: formattedPrice,
+        condition: conditionLabel,
+        sellerName: sellerName,
+        sellerAvatar: sellerAvatar || '',
+        imageUri: imagesList[0] || '',
+      },
+    } as any);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -532,7 +549,7 @@ export default function ProductDetailScreen() {
           <TouchableOpacity
             style={styles.buyBtn}
             activeOpacity={0.85}
-            onPress={handleOpenChat}
+            onPress={handleBuyProduct}
           >
             <Text style={styles.buyBtnText}>Comprar</Text>
           </TouchableOpacity>

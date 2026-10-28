@@ -383,7 +383,11 @@ export default function HomeScreen() {
             {/* SECCIÓN: TRANSACCIONES */}
             <View style={styles.tuSection}>
               <Text style={styles.tuSectionTitle}>TRANSACCIONES</Text>
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={() => router.push('/cart' as any)}
+              >
                 <View style={styles.tuMenuItemLeft}>
                   <ComprasIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Compras</Text>
