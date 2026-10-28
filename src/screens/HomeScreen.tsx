@@ -18,6 +18,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
 import InboxView from '../components/InboxView';
+import { NEARBY_PRODUCTS, RECENT_PRODUCTS } from '../data/products';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
 import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
@@ -51,70 +52,6 @@ const CATEGORIES = [
   { id: '3', name: 'Motor y\naccesorios', IconComponent: MotorIcon },
   { id: '4', name: 'Moda y\naccesorios', IconComponent: ModaIcon },
   { id: '5', name: 'Inmobilia\nria', IconComponent: InmobiliariaIcon },
-];
-
-// Datos Mock de Productos Cercanos
-const NEARBY_PRODUCTS = [
-  {
-    id: 'p1',
-    title: 'Volkswagen Gol Trend 1.6 MSI',
-    price: '$ 8.500.000',
-    location: 'Pilar Centro',
-    time: 'Hace 15 min',
-    image: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80',
-  },
-  {
-    id: 'p2',
-    title: 'iPhone 13 Pro 128GB Grafito',
-    price: '$ 680.000',
-    location: 'Pilar, Km 50',
-    time: 'Hace 1 hora',
-    image: 'https://images.unsplash.com/photo-1632661674596-df8be070a5c5?w=500&q=80',
-  },
-  {
-    id: 'p3',
-    title: 'Bicicleta Rodado 29 Mountain Bike',
-    price: '$ 240.000',
-    location: 'Del Viso, Pilar',
-    time: 'Hace 3 horas',
-    image: 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=500&q=80',
-  },
-];
-
-// Datos Mock de Productos Recientes
-const RECENT_PRODUCTS = [
-  {
-    id: 'r1',
-    title: 'PlayStation 5 con 2 Joysticks',
-    price: '$ 750.000',
-    location: 'Pilar Point',
-    time: 'Hace 20 min',
-    image: 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=500&q=80',
-  },
-  {
-    id: 'r2',
-    title: 'Departamento 2 Ambientes c/ Balcón',
-    price: 'USD 65.000',
-    location: 'Pilar Casas',
-    time: 'Hace 45 min',
-    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=500&q=80',
-  },
-  {
-    id: 'r3',
-    title: 'Smart TV 50" 4K UHD Samsung',
-    price: '$ 490.000',
-    location: 'Pilar Centro',
-    time: 'Hace 2 horas',
-    image: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=500&q=80',
-  },
-  {
-    id: 'r4',
-    title: 'Campera de Cuero Hombre Talle L',
-    price: '$ 85.000',
-    location: 'Manuel Alberti',
-    time: 'Hace 5 horas',
-    image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=500&q=80',
-  },
 ];
 
 export default function HomeScreen() {
@@ -239,7 +176,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.container}>
         {/* ========================================================= */}
@@ -528,12 +465,15 @@ export default function HomeScreen() {
               {NEARBY_PRODUCTS.map((prod) => {
                 const isFav = favorites.includes(prod.id);
                 return (
-                  <TouchableOpacity key={prod.id} style={styles.horizontalCard} activeOpacity={0.85}>
+                  <TouchableOpacity key={prod.id} style={styles.horizontalCard} activeOpacity={0.85} onPress={() => router.push({ pathname: '/detalle-producto', params: { id: prod.id } })}>
                     <View style={styles.imageContainer}>
-                      <Image source={{ uri: prod.image }} style={styles.productImage} />
+                      <Image source={{ uri: prod.images[0] }} style={styles.productImage} />
                       <TouchableOpacity
                         style={styles.favoriteButton}
-                        onPress={() => toggleFavorite(prod.id)}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          toggleFavorite(prod.id);
+                        }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Ionicons
@@ -572,12 +512,15 @@ export default function HomeScreen() {
               {RECENT_PRODUCTS.map((prod) => {
                 const isFav = favorites.includes(prod.id);
                 return (
-                  <TouchableOpacity key={prod.id} style={styles.gridCard} activeOpacity={0.85}>
+                  <TouchableOpacity key={prod.id} style={styles.gridCard} activeOpacity={0.85} onPress={() => router.push({ pathname: '/detalle-producto', params: { id: prod.id } })}>
                     <View style={styles.gridImageContainer}>
-                      <Image source={{ uri: prod.image }} style={styles.productImage} />
+                      <Image source={{ uri: prod.images[0] }} style={styles.productImage} />
                       <TouchableOpacity
                         style={styles.favoriteButton}
-                        onPress={() => toggleFavorite(prod.id)}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          toggleFavorite(prod.id);
+                        }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Ionicons

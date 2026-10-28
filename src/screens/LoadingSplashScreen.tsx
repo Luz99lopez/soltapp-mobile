@@ -60,7 +60,7 @@ export default function LoadingSplashScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={BG_COLOR} />
+      <StatusBar barStyle="light-content" />
       <View style={styles.centerWrapper}>
         <Animated.View
           style={[

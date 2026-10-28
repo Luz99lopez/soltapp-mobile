@@ -43,7 +43,7 @@ export default function ChatScreen() {
   const productPrice = params.productPrice || '$ 50.000';
   const sellerName = params.sellerName || 'Alex Silva';
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   // Mensajes iniciales exactos a la imagen de referencia
   const initialMessages: ChatMessage[] = [
@@ -164,7 +164,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       {/* 1. Header con Producto y Retroceso */}
       <View style={styles.header}>
