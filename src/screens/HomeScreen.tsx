@@ -62,8 +62,9 @@ export default function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'home' | 'favorites' | 'upload' | 'inbox' | 'profile'>('home');
 
   useEffect(() => {
-    if (params?.tab === 'inbox') {
-      setActiveTab('inbox');
+    const tab = params?.tab;
+    if (tab === 'home' || tab === 'favorites' || tab === 'upload' || tab === 'inbox' || tab === 'profile') {
+      setActiveTab(tab);
     }
   }, [params?.tab]);
   const [profileSubView, setProfileSubView] = useState<'edit' | 'public'>('edit');

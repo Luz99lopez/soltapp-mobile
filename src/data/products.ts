@@ -1,3 +1,12 @@
+export interface Seller {
+  name: string;
+  avatarUrl?: string;
+  rating: number;
+}
+
+// Vendedor provisional del chat de demostración, hasta conectar las publicaciones al backend.
+export const DEMO_SELLER: Seller = { name: 'Alex Silva', rating: 4.8 };
+
 export interface Product {
   id: string;
   title: string;
@@ -9,6 +18,7 @@ export interface Product {
   brand?: string;
   color?: string;
   details?: string[];
+  seller?: Seller;
 }
 
 // Datos Mock de Productos Cercanos
