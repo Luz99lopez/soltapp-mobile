@@ -105,7 +105,7 @@ export default function CartScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       {/* 1. Header con flecha atrás y Título Compras */}
       <View style={styles.header}>

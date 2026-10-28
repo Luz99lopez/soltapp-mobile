@@ -45,14 +45,24 @@ export const MeetupSellerQRModal: React.FC<MeetupSellerQRModalProps> = ({
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Manejo de expiración y cuenta regresiva
+  // Sincronizar con props de la orden
+  useEffect(() => {
+    if (order.qr_token) {
+      setToken(order.qr_token);
+    }
+    if (order.qr_expires_at) {
+      setExpiresAt(order.qr_expires_at);
+    }
+  }, [order.qr_token, order.qr_expires_at]);
+
+  // Generar si no existe
   useEffect(() => {
     if (!visible) return;
 
-    if (!token) {
+    if (!token && !order.qr_token) {
       handleGenerateQr();
     }
-  }, [visible]);
+  }, [visible, token, order.qr_token]);
 
   useEffect(() => {
     if (!expiresAt) return;
@@ -98,22 +108,7 @@ export const MeetupSellerQRModal: React.FC<MeetupSellerQRModalProps> = ({
     }
   }, [isExpired, order.status]);
 
-  // Suscripción Realtime a cambios de la orden mientras el modal está abierto
-  useEffect(() => {
-    if (!visible || !order.id) return;
-
-    const unsubscribe = meetupOrderService.subscribeToOrder(order.id, (updatedFields) => {
-      console.log('[MeetupSellerQRModal] Orden actualizada en tiempo real:', updatedFields);
-      if (updatedFields.status) {
-        const mergedOrder = { ...order, ...updatedFields } as MeetupOrder;
-        onOrderUpdated(mergedOrder);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [visible, order.id]);
+// La orden se actualiza en tiempo real desde MeetupOrderScreen
 
   const handleGenerateQr = async () => {
     try {
