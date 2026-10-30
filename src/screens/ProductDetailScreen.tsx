@@ -225,6 +225,7 @@ export default function ProductDetailScreen() {
       pathname: '/cart',
       params: {
         productId: product.id,
+        sellerId: product.seller_id || '',
         title: product.title,
         price: formattedPrice,
         condition: conditionLabel,

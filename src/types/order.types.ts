@@ -70,3 +70,20 @@ export interface OrderReviewResult {
   review_id: string;
   rating: number;
 }
+
+export interface SoltappNotification {
+  id: string;
+  order_id: string;
+  seller_id?: string;
+  buyer_id?: string;
+  recipient_role?: 'seller' | 'buyer';
+  title: string;
+  message: string;
+  product_title: string;
+  product_price: string;
+  product_image?: string | null;
+  buyer_name: string;
+  seller_name?: string;
+  created_at: string;
+  read: boolean;
+}

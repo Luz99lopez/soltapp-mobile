@@ -10,10 +10,12 @@ import {
   Image,
   Modal,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { meetupOrderService } from '../services/meetupOrderService';
+import { supabase } from '../supabase';
 import { ActivityIndicator } from 'react-native';
 
 // Colores oficiales de Soltapp
@@ -26,6 +28,7 @@ export default function CartScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     productId?: string;
+    sellerId?: string;
     title?: string;
     subtitle?: string;
     condition?: string;
@@ -45,20 +48,35 @@ export default function CartScreen() {
   const imageUri = params.imageUri || null;
 
   // Estado del método de pago (por defecto: Pago seguro por soltapp)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('qr_soltapp');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
   const [createdOrderId, setCreatedOrderId] = useState<string>('meetup-demo-1');
 
   // Cálculos de resumen
   const subtotalText = price.startsWith('$') ? price : `$${price}`;
-  const deliveryCostText = '$0.00';
   const totalText = subtotalText;
 
   const handleConfirmPurchase = async () => {
     try {
       setIsCreatingOrder(true);
-      const newOrder = await meetupOrderService.createMeetupOrder(params.productId);
+      const { data: authData } = await supabase.auth.getUser();
+      const currentBuyerName =
+        authData?.user?.user_metadata?.full_name ||
+        authData?.user?.user_metadata?.name ||
+        'Manuel Sans';
+
+      const newOrder = await meetupOrderService.createMeetupOrder(
+        params.productId,
+        params.sellerId,
+        {
+          title,
+          price,
+          sellerName,
+          buyerName: currentBuyerName,
+          imageUri: imageUri || '',
+        }
+      );
       if (newOrder?.id) {
         setCreatedOrderId(newOrder.id);
       }
@@ -81,6 +99,7 @@ export default function CartScreen() {
         title,
         price,
         sellerName,
+        sellerId: params.sellerId || '',
         imageUri: imageUri || '',
       },
     } as any);
@@ -168,48 +187,52 @@ export default function CartScreen() {
           <Text style={styles.paymentSectionTitle}>Método de pago</Text>
 
           <View style={styles.paymentOptionsCard}>
-            {/* Opción 1: Pago seguro por soltapp (Liberación por QR) */}
+            {/* Opción 1: Pago seguro por soltapp (BLOQUEADO / PRÓXIMAMENTE) */}
             <TouchableOpacity
-              style={styles.paymentOptionRow}
+              style={[styles.paymentOptionRow, styles.disabledOptionRow]}
               activeOpacity={0.8}
-              onPress={() => setPaymentMethod('qr_soltapp')}
+              onPress={() => {
+                Alert.alert(
+                  'Próximamente',
+                  'El módulo de pago con custodia y retención de dinero dentro de Soltapp está en desarrollo y estará disponible próximamente. Por el momento, todos los tratos se realizan cara a cara.'
+                );
+              }}
             >
               <View style={styles.radioContainer}>
-                {paymentMethod === 'qr_soltapp' ? (
-                  <View style={styles.checkedCircle}>
-                    <Ionicons name="checkmark" size={15} color="#1F232E" />
-                  </View>
-                ) : (
-                  <View style={styles.uncheckedCircle} />
-                )}
+                <View style={styles.disabledRadioCircle}>
+                  <Ionicons name="lock-closed" size={11} color="#94A3B8" />
+                </View>
               </View>
 
               <View style={styles.paymentTextCol}>
-                <Text style={styles.paymentOptionTitle}>Pago seguro por soltapp</Text>
-                <Text style={styles.paymentOptionSubtitle}>(Liberación por QR)</Text>
-                <Text style={styles.protectionText}>Protección de producto : $50.000</Text>
+                <View style={styles.optionTitleRow}>
+                  <Text style={[styles.paymentOptionTitle, styles.disabledText]}>
+                    Pago seguro por soltapp
+                  </Text>
+                  <View style={styles.comingSoonBadge}>
+                    <Text style={styles.comingSoonBadgeText}>Próximamente</Text>
+                  </View>
+                </View>
+                <Text style={[styles.paymentOptionSubtitle, styles.disabledText]}>
+                  (Retención de dinero)
+                </Text>
               </View>
             </TouchableOpacity>
 
-            {/* Opción 2: Pago en efectivo al encontrarse */}
+            {/* Opción 2: Pago en efectivo al encontrarse (ACTIVO) */}
             <TouchableOpacity
               style={[styles.paymentOptionRow, { marginTop: 18 }]}
               activeOpacity={0.8}
               onPress={() => setPaymentMethod('efectivo')}
             >
               <View style={styles.radioContainer}>
-                {paymentMethod === 'efectivo' ? (
-                  <View style={styles.checkedCircle}>
-                    <Ionicons name="checkmark" size={15} color="#1F232E" />
-                  </View>
-                ) : (
-                  <View style={styles.uncheckedCircle} />
-                )}
+                <View style={styles.checkedCircle}>
+                  <Ionicons name="checkmark" size={15} color="#1F232E" />
+                </View>
               </View>
 
               <View style={styles.paymentTextCol}>
                 <Text style={styles.paymentOptionTitle}>Pago en efectivo al encontrarse</Text>
-                <Text style={styles.protectionText}>Protección de producto : $0.00</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -220,11 +243,6 @@ export default function CartScreen() {
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal (1 producto)</Text>
             <Text style={styles.summaryValue}>{subtotalText}</Text>
-          </View>
-
-          <View style={[styles.summaryRow, { marginTop: 12 }]}>
-            <Text style={styles.summaryLabel}>Coste de entrega</Text>
-            <Text style={styles.summaryValue}>{deliveryCostText}</Text>
           </View>
 
           <View style={styles.summaryDivider} />
@@ -272,9 +290,7 @@ export default function CartScreen() {
             <Text style={styles.modalTitle}>¡Trato confirmado!</Text>
 
             <Text style={styles.modalMessage}>
-              {paymentMethod === 'qr_soltapp'
-                ? `Tu pago está 100% protegido por Soltapp. Cuando te encuentres con ${sellerName} y verifiques el producto en persona, escanea o muestra el código QR para liberar los fondos de forma segura.`
-                : `Has acordado pagar en efectivo al encontrarte con ${sellerName}. Por favor, acuerden un lugar público y seguro para realizar la entrega.`}
+              `Has acordado encontrarte con ${sellerName} para revisar el producto y pagar en efectivo o transferencia externa directa. Recuerden coordinar un punto público y seguro para realizar el encuentro.`
             </Text>
 
             <TouchableOpacity
@@ -469,6 +485,42 @@ const styles = StyleSheet.create({
   paymentOptionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+  },
+  disabledOptionRow: {
+    opacity: 0.55,
+  },
+  disabledRadioCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  optionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  comingSoonBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  comingSoonBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#92400E',
+    letterSpacing: 0.2,
+  },
+  disabledText: {
+    color: '#94A3B8',
   },
   radioContainer: {
     marginRight: 12,

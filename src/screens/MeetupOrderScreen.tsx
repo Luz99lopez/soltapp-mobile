@@ -185,39 +185,18 @@ export const MeetupOrderScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Simulador / Selector de Rol (Comprador vs Vendedor) */}
-        <View style={styles.roleToggleCard}>
-          <Text style={styles.roleToggleLabel}>Ver flujo como:</Text>
-          <View style={styles.roleToggleButtons}>
-            <TouchableOpacity
-              style={[styles.roleBtn, isBuyer && styles.roleBtnActive]}
-              onPress={() => setCurrentRole('buyer')}
-            >
-              <Ionicons
-                name="person-outline"
-                size={16}
-                color={isBuyer ? '#FFFFFF' : MUTED_GRAY}
-                style={{ marginRight: 6 }}
-              />
-              <Text style={[styles.roleBtnText, isBuyer && styles.roleBtnTextActive]}>
-                Comprador (Lector)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.roleBtn, !isBuyer && styles.roleBtnActive]}
-              onPress={() => setCurrentRole('seller')}
-            >
-              <Ionicons
-                name="storefront-outline"
-                size={16}
-                color={!isBuyer ? '#FFFFFF' : MUTED_GRAY}
-                style={{ marginRight: 6 }}
-              />
-              <Text style={[styles.roleBtnText, !isBuyer && styles.roleBtnTextActive]}>
-                Vendedor (QR)
-              </Text>
-            </TouchableOpacity>
+        {/* Identificador de Rol Exclusivo */}
+        <View style={styles.roleBadgeHeader}>
+          <View style={styles.roleBadgePill}>
+            <Ionicons
+              name={isBuyer ? 'bag-handle-outline' : 'storefront-outline'}
+              size={15}
+              color="#0D9488"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.roleBadgeText}>
+              {isBuyer ? 'Tu Compra en Proceso (Vista Comprador)' : 'Tu Venta en Proceso (Vista Vendedor)'}
+            </Text>
           </View>
         </View>
 
@@ -558,6 +537,25 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+  },
+  roleBadgeHeader: {
+    marginBottom: 12,
+    alignItems: 'flex-start',
+  },
+  roleBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDFA',
+    borderWidth: 1,
+    borderColor: '#99F6E4',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  roleBadgeText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0D9488',
   },
   roleToggleCard: {
     backgroundColor: '#FFFFFF',

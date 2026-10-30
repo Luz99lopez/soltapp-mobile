@@ -22,6 +22,8 @@ import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuM
 import BottomNavbar, { BottomNavTab } from '../components/BottomNavbar';
 import TopNavbar from '../components/TopNavbar';
 import InboxView from '../components/InboxView';
+import { meetupOrderService } from '../services/meetupOrderService';
+import { accountService, SoltappUser, PRESET_USERS } from '../services/accountService';
 import UploadProductView from '../components/UploadProductView';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
@@ -235,20 +237,58 @@ export default function HomeScreen() {
     if (meta.location) setEditLocation(meta.location);
   };
 
-  const userName =
-    currentUser?.user_metadata?.full_name ||
-    currentUser?.user_metadata?.name ||
-    `${editFirstName} ${editLastName}`.trim() ||
-    (currentUser?.email ? currentUser.email.split('@')[0] : 'Manuel Sans');
+  const [currentAccount, setCurrentAccount] = useState<SoltappUser>(PRESET_USERS[0]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAccount = async () => {
+      try {
+        const user = await accountService.getCurrentUser();
+        if (isMounted) {
+          setCurrentAccount(user);
+        }
+      } catch {}
+    };
+
+    fetchAccount();
+
+    const handleStorage = () => {
+      fetchAccount();
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorage);
+    }
+
+    return () => {
+      isMounted = false;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorage);
+      }
+    };
+  }, []);
+
+  const userName = currentAccount.fullName;
   const userAvatar =
+    currentAccount.avatarUrl ||
     currentUser?.user_metadata?.avatar_url ||
     currentUser?.user_metadata?.picture ||
     null;
+  const userYear = currentAccount.sinceYear;
 
-  const userYear = currentUser?.created_at
-    ? new Date(currentUser.created_at).getFullYear()
-    : '2026';
+  const handleSwitchAccount = async () => {
+    const presetUsers = accountService.getPresetUsers();
+    const currentIndex = presetUsers.findIndex((u) => u.id === currentAccount.id);
+    const nextIndex = (currentIndex + 1) % presetUsers.length;
+    const nextUser = presetUsers[nextIndex];
+
+    await accountService.switchUser(nextUser.id);
+    setCurrentAccount(nextUser);
+    Alert.alert(
+      'Usuario cambiado',
+      `Ahora estás navegando como ${nextUser.fullName}. Tu buzón, publicaciones y compras corresponden a este usuario.`
+    );
+  };
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) =>
@@ -292,9 +332,48 @@ export default function HomeScreen() {
     }
   };
 
+  const handlePressCompras = async () => {
+    const latest = await meetupOrderService.getLatestOrder('buyer', currentAccount.id);
+    if (latest) {
+      router.push({
+        pathname: '/order/[id]',
+        params: {
+          id: latest.id,
+          role: 'buyer',
+          title: latest.product?.title || 'Sillas (Switch)',
+          price: String(latest.product?.price || '$ 400'),
+          sellerName: latest.seller?.full_name || 'Vendedor',
+          imageUri: latest.product?.images?.[0] || '',
+        },
+      } as any);
+    } else {
+      router.push('/cart' as any);
+    }
+  };
+
+  const handlePressVentas = async () => {
+    const latest = await meetupOrderService.getLatestOrder('seller', currentAccount.id);
+    if (latest) {
+      router.push({
+        pathname: '/order/[id]',
+        params: {
+          id: latest.id,
+          role: 'seller',
+          title: latest.product?.title || 'Sillas (Switch)',
+          price: String(latest.product?.price || '$ 400'),
+          sellerName: latest.seller?.full_name || 'Tú (Vendedor)',
+          buyerName: latest.buyer?.full_name || 'Comprador',
+          imageUri: latest.product?.images?.[0] || '',
+        },
+      } as any);
+    } else {
+      setActiveTab('inbox');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.container}>
         {/* ========================================================= */}
@@ -356,7 +435,7 @@ export default function HomeScreen() {
                   <EstrellaIcon width={16} height={16} />
                   <EstrellaIcon width={16} height={16} />
                   <EstrellaIcon width={16} height={16} />
-                  <Text style={styles.tuRatingCount}>(1)</Text>
+                  <Text style={styles.tuRatingCount}>({currentAccount.rating})</Text>
                 </View>
 
                 <Text style={styles.tuMemberSince}>En soltapp desde {userYear}</Text>
@@ -380,13 +459,13 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* SECCIÓN: TRANSACCIONES */}
+            {/* SECCIÓN: TRANSACCIONES (Cualquier cuenta puede comprar y vender) */}
             <View style={styles.tuSection}>
               <Text style={styles.tuSectionTitle}>TRANSACCIONES</Text>
               <TouchableOpacity
                 style={styles.tuMenuItem}
                 activeOpacity={0.7}
-                onPress={() => router.push('/cart' as any)}
+                onPress={handlePressCompras}
               >
                 <View style={styles.tuMenuItemLeft}>
                   <ComprasIcon width={22} height={22} />
@@ -395,7 +474,11 @@ export default function HomeScreen() {
                 <SiguienteIcon width={14} height={14} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handlePressVentas}
+              >
                 <View style={styles.tuMenuItemLeft}>
                   <VentasIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Ventas</Text>
@@ -423,6 +506,21 @@ export default function HomeScreen() {
                 <View style={styles.tuMenuItemLeft}>
                   <ConfiguracionIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Ajustes</Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
+
+              {/* Conmutador de Usuario para pruebas en desarrollo */}
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handleSwitchAccount}
+              >
+                <View style={styles.tuMenuItemLeft}>
+                  <Ionicons name="people-outline" size={20} color="#0D9488" style={{ marginRight: 12 }} />
+                  <Text style={[styles.tuMenuItemText, { color: '#0D9488', fontWeight: '700' }]}>
+                    Cambiar usuario activo (Simulación)
+                  </Text>
                 </View>
                 <SiguienteIcon width={14} height={14} />
               </TouchableOpacity>
@@ -1117,6 +1215,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: TEXT_DARK,
     marginBottom: 4,
+  },
+  roleBadgeHeaderPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+    marginBottom: 4,
+  },
+  roleBadgeSeller: {
+    backgroundColor: '#CCFBF1',
+  },
+  roleBadgeBuyer: {
+    backgroundColor: '#F1F5F9',
+  },
+  roleBadgeHeaderPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  roleBadgeSellerText: {
+    color: '#0D9488',
+  },
+  roleBadgeBuyerText: {
+    color: '#475569',
   },
   tuRatingRow: {
     flexDirection: 'row',
