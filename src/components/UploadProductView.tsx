@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 40,
+    paddingBottom: 120, // Espacio para que el botón Publicar no quede tapado por la barra inferior
     gap: 16,
   },
   mainTitle: {

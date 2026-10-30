@@ -1,53 +1,43 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  SafeAreaView,
+  ActivityIndicator,
+  Image,
+  Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
-  Platform,
-  Image,
-  Alert,
-  ActivityIndicator,
-  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { supabase } from '../supabase';
-import { fetchHomeProducts, ProductListItem } from '../services';
-import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomNavbar, { BottomNavTab } from '../components/BottomNavbar';
-import TopNavbar from '../components/TopNavbar';
+import CategoriesMenuModal from '../components/CategoriesMenuModal';
 import InboxView from '../components/InboxView';
+import TopNavbar from '../components/TopNavbar';
 import UploadProductView from '../components/UploadProductView';
+import { fetchHomeProducts, ProductListItem } from '../services';
+import { supabase } from '../supabase';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
-import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
-import BuscarIcon from '../../assets/svgs/Buscar.svg';
-import VerTodoIcon from '../../assets/svgs/Ver todo.svg';
-import AvatarIcon from '../../assets/svgs/Avatar.svg';
 import AutoIcon from '../../assets/svgs/Auto.svg';
-import MotoIcon from '../../assets/svgs/Moto.svg';
 import InmobiliariaIcon from '../../assets/svgs/Inmobiliaria.svg';
 import ModaIcon from '../../assets/svgs/Moda y accesorios.svg';
+import MotoIcon from '../../assets/svgs/Moto.svg';
 import MotorIcon from '../../assets/svgs/Motor y accesorios.svg';
-import HomeIcon from '../../assets/svgs/Home.svg';
-import CorazonIcon from '../../assets/svgs/Corazón.svg';
-import MasIcon from '../../assets/svgs/Más.svg';
-import MailIcon from '../../assets/svgs/mail.svg';
 
 // SVGs de Perfil
-import ProductoIcon from '../../assets/svgs/Producto.svg';
-import ComprasIcon from '../../assets/svgs/Compras.svg';
-import VentasIcon from '../../assets/svgs/Ventas.svg';
 import BilleteraIcon from '../../assets/svgs/Billetara.svg';
+import ComprasIcon from '../../assets/svgs/Compras.svg';
 import ConfiguracionIcon from '../../assets/svgs/Configuracion.svg';
-import PreguntaIcon from '../../assets/svgs/Pregunta.svg';
-import SiguienteIcon from '../../assets/svgs/Siguiente.svg';
 import EstrellaIcon from '../../assets/svgs/Estrella.svg';
+import PreguntaIcon from '../../assets/svgs/Pregunta.svg';
+import ProductoIcon from '../../assets/svgs/Producto.svg';
+import SiguienteIcon from '../../assets/svgs/Siguiente.svg';
+import VentasIcon from '../../assets/svgs/Ventas.svg';
 
 // Datos de Categorías con sus respectivos SVGs (Exacto al diseño y orden de Figma)
 const CATEGORIES = [
@@ -133,7 +123,7 @@ export default function HomeScreen() {
       return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=600&q=80';
     }
     if (text.includes('auto') || text.includes('volkswagen') || text.includes('gol') || text.includes('vehiculo') || text.includes('coche')) {
-      return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80';
+      return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
     }
     if (text.includes('zapatilla') || text.includes('nike') || text.includes('ropa') || text.includes('moda')) {
       return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&q=80';
@@ -293,8 +283,8 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.container}>
         {/* ========================================================= */}
@@ -704,6 +694,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 0,
   },
   container: {
     flex: 1,
@@ -798,7 +789,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 95,
+    paddingBottom: 130,
   },
 
   // ==========================================

@@ -1,13 +1,13 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Componentes SVG oficiales de Soltapp
-import HomeIcon from '../../assets/svgs/Home.svg';
+import AvatarIcon from '../../assets/svgs/Avatar.svg';
 import CorazonIcon from '../../assets/svgs/Corazón.svg';
+import HomeIcon from '../../assets/svgs/Home.svg';
 import MasIcon from '../../assets/svgs/Más.svg';
 import MailIcon from '../../assets/svgs/mail.svg';
-import AvatarIcon from '../../assets/svgs/Avatar.svg';
 
 export type BottomNavTab = 'home' | 'favorites' | 'upload' | 'inbox' | 'profile';
 
@@ -21,6 +21,7 @@ const INACTIVE_COLOR = '#9098B1';
 
 export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const handlePress = (tab: BottomNavTab) => {
     if (onTabPress) {
@@ -48,7 +49,7 @@ export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProp
   };
 
   return (
-    <View style={styles.bottomNavContainer}>
+    <View style={[styles.bottomNavContainer, { paddingBottom: Platform.OS === 'android' ? 48 : 20 }]}>
       <View style={styles.bottomNav}>
         {/* 1. Inicio */}
         <TouchableOpacity
@@ -142,12 +143,12 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#FFFFFF',
     zIndex: 100,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
   bottomNav: {
     height: 60,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
