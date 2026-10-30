@@ -1,22 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useEffect, useState } from 'react';
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Image,
-  Switch,
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
-  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import { productService, categoryService, storageService } from '../services';
-import { Category, ProductCondition } from '../types/database.types';
+import { categoryService, locationService, productService, storageService } from '../services';
+import { ProductCondition } from '../types/database.types';
+import InteractiveLocationMap, { DEFAULT_COORDINATES, LocationCoordinates } from './InteractiveLocationMap';
 
 // Opciones de condición de producto
 const CONDITION_OPTIONS: { label: string; value: ProductCondition }[] = [
@@ -59,7 +59,6 @@ const FALLBACK_CATEGORIES = [
   { id: 19, name: 'Otros' },
 ];
 
-const DEFAULT_MAP_IMAGE = 'https://images.unsplash.com/photo-1524661135-423995f22d0b?w=600&q=80';
 const DEFAULT_PRODUCT_FALLBACK = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
 
 interface UploadProductViewProps {
@@ -74,8 +73,9 @@ export default function UploadProductView({
   // Sección 1: Información
   const [quickInfo, setQuickInfo] = useState('');
 
-  // Sección 2: Fotos (URIs locales para preview en la galería)
+  // Sección 2: Fotos
   const [photos, setPhotos] = useState<string[]>([]);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
 
   // Sección 3: Categoría y Datos Principales
   const [categories, setCategories] = useState<{ id: number; name: string }[]>(FALLBACK_CATEGORIES);
@@ -90,8 +90,12 @@ export default function UploadProductView({
   const [shippingActive, setShippingActive] = useState(true);
   const [selectedWeight, setSelectedWeight] = useState('0 a 2 kg');
 
-  // Sección 5: Localización
+  // Sección 5: Localización, Sugerencias tipo Google Maps y GPS
   const [location, setLocation] = useState(userLocation);
+  const [coordinates, setCoordinates] = useState<LocationCoordinates>(DEFAULT_COORDINATES);
+  const [isLocatingGPS, setIsLocatingGPS] = useState(false);
+  const [suggestions, setSuggestions] = useState<Array<{ id: string; name: string; lat: number; lon: number }>>([]);
+  const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
 
   // Modales y Estados de UI
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -111,17 +115,77 @@ export default function UploadProductView({
           setCategories(data);
         }
       })
-      .catch(() => {
-        // Mantiene fallback silenciosamente
-      });
+      .catch(() => {});
   }, []);
 
-  // Selección de fotos con ImagePicker (almacena URIs locales para preview ágil)
-  const handlePickImages = async () => {
+  // Búsqueda automática de sugerencias tipo Maps a medida que se escribe
+  useEffect(() => {
+    const trimmed = location.trim();
+    if (trimmed.length < 3 || trimmed === 'Mi ubicación actual') {
+      setSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingSuggestions(true);
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=5&addressdetails=1`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+        if (res.ok) {
+          const data = await res.json();
+          setSuggestions(
+            data.map((item: any) => ({
+              id: String(item.place_id || Math.random()),
+              name: item.display_name,
+              lat: parseFloat(item.lat),
+              lon: parseFloat(item.lon),
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn('Error buscando sugerencias de mapa:', err);
+      } finally {
+        setIsSearchingSuggestions(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [location]);
+
+  // 1. Abrir la cámara física del celular
+  const handleTakePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permiso necesario',
+          'Se necesita acceso a la cámara para tomar fotos del producto.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        allowsEditing: true,
+        aspect: [4, 3],
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newPhotoUri = result.assets[0].uri;
+        setPhotos((prev) => [...prev, newPhotoUri].slice(0, 10));
+      }
+    } catch (err: any) {
+      console.error('[UploadProductView.handleTakePhoto] Error:', err);
+      Alert.alert('Error', 'No se pudo abrir la cámara en este dispositivo.');
+    }
+  };
+
+  // 2. Elegir fotos desde la galería
+  const handlePickFromGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permiso necesario', 'Se requiere acceso a la galería para subir fotos de tu producto.');
+        Alert.alert('Permiso necesario', 'Se requiere acceso a la galería para subir fotos.');
         return;
       }
 
@@ -137,8 +201,48 @@ export default function UploadProductView({
         setPhotos((prev) => [...prev, ...selectedUris].slice(0, 10));
       }
     } catch (err: any) {
-      console.error('[UploadProductView.handlePickImages] Error:', err);
+      console.error('[UploadProductView.handlePickFromGallery] Error:', err);
       Alert.alert('Error', 'No se pudieron cargar las imágenes seleccionadas.');
+    }
+  };
+
+  // 3. Abrir modal para elegir Cámara o Galería
+  const handlePickImages = () => {
+    if (photos.length >= 10) {
+      Alert.alert('Límite alcanzado', 'Puedes subir un máximo de 10 fotos.');
+      return;
+    }
+    setPhotoModalVisible(true);
+  };
+
+  // 4. Seleccionar una sugerencia tipo Maps
+  const handleSelectSuggestion = (sugg: { name: string; lat: number; lon: number }) => {
+    const parts = sugg.name.split(',');
+    const shortAddress = parts.slice(0, 2).join(',').trim();
+    setLocation(shortAddress || sugg.name);
+    setCoordinates({ latitude: sugg.lat, longitude: sugg.lon });
+    setSuggestions([]);
+  };
+
+  // 5. Obtener la ubicación GPS del dispositivo móvil
+  const handleRequestGPS = async () => {
+    try {
+      setIsLocatingGPS(true);
+      const { coords, error } = await locationService.getCurrentLocation();
+      if (error) {
+        Alert.alert('Aviso de GPS', error);
+        return;
+      }
+      if (coords) {
+        setCoordinates(coords);
+        setLocation('Mi ubicación actual');
+        setSuggestions([]);
+      }
+    } catch (err: any) {
+      console.error('[UploadProductView.handleRequestGPS] Error:', err);
+      Alert.alert('Error', 'No se pudo obtener la posición GPS del dispositivo.');
+    } finally {
+      setIsLocatingGPS(false);
     }
   };
 
@@ -147,11 +251,11 @@ export default function UploadProductView({
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Publicar Producto en Supabase con subida previa al Storage
+  // Publicar Producto en Supabase
   const handlePublish = async () => {
     setErrorMessage(null);
 
-    const cleanTitle = (title.trim() || quickInfo.trim());
+    const cleanTitle = title.trim() || quickInfo.trim();
     if (!cleanTitle) {
       setErrorMessage('Por favor ingresa un título o descripción para tu anuncio.');
       return;
@@ -174,7 +278,6 @@ export default function UploadProductView({
     try {
       let finalPublicUrls: string[] = [];
 
-      // 1. Subida al bucket de Supabase Storage
       if (photos.length > 0) {
         finalPublicUrls = await storageService.uploadMultipleProductImages(photos, 'products');
       } else {
@@ -183,7 +286,6 @@ export default function UploadProductView({
 
       setUploadStatus('Guardando publicación en la base de datos...');
 
-      // 2. Inserción en la base de datos guardando únicamente las URLs públicas
       const finalDescription = description.trim() || quickInfo.trim() || cleanTitle;
 
       await productService.createProduct({
@@ -209,7 +311,6 @@ export default function UploadProductView({
 
   const handleFinishSuccess = () => {
     setSuccessModalVisible(false);
-    // Limpiar formulario
     setTitle('');
     setDescription('');
     setQuickInfo('');
@@ -223,10 +324,9 @@ export default function UploadProductView({
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      {/* Título Principal */}
       <Text style={styles.mainTitle}>Subí tu anuncio</Text>
 
-      {/* Hero Banner Placeholder */}
+      {/* Hero Banner */}
       <View style={styles.heroBanner}>
         <View style={styles.heroBannerContent}>
           <Ionicons name="sparkles" size={24} color="#0D9488" />
@@ -279,10 +379,10 @@ export default function UploadProductView({
         {/* Dropzone de carga */}
         <TouchableOpacity style={styles.dropzone} activeOpacity={0.8} onPress={handlePickImages}>
           <View style={styles.uploadBtnOutline}>
-            <Ionicons name="cloud-upload-outline" size={16} color="#0D9488" style={{ marginRight: 6 }} />
-            <Text style={styles.uploadBtnOutlineText}>Subir fotos</Text>
+            <Ionicons name="camera-outline" size={18} color="#0D9488" style={{ marginRight: 6 }} />
+            <Text style={styles.uploadBtnOutlineText}>Agregar fotos (Cámara / Galería)</Text>
           </View>
-          <Text style={styles.dropzoneTitle}>Arrastra tus fotos aquí</Text>
+          <Text style={styles.dropzoneTitle}>Toca aquí para tomar foto o elegir archivos</Text>
           <Text style={styles.dropzoneHint}>Formatos aceptados: JPEG, PNG, WEBP (máx. 10MB)</Text>
           <Text style={styles.dropzoneHint}>Mínimo 1 foto, máximo 10 fotos</Text>
         </TouchableOpacity>
@@ -307,10 +407,9 @@ export default function UploadProductView({
             </View>
           ))}
 
-          {/* Slots vacíos de relleno para mantener el aspecto del diseño */}
           {Array.from({ length: Math.max(0, 3 - photos.length) }).map((_, i) => (
             <TouchableOpacity key={`empty-${i}`} style={styles.photoSlotEmpty} onPress={handlePickImages}>
-              <Ionicons name="image-outline" size={28} color="#CBD5E1" />
+              <Ionicons name="camera-outline" size={28} color="#CBD5E1" />
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -322,14 +421,13 @@ export default function UploadProductView({
         </View>
       </View>
 
-      {/* SECCIÓN 3: Selecciona una categoría para tu anuncio */}
+      {/* SECCIÓN 3: Categoría y Datos */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionHeaderTitle}>Selecciona una categoría para tu anuncio</Text>
         <Text style={styles.sectionSubtitle}>
           Indicá en qué categoría encaja mejor tu producto para que los compradores puedan encontrarlo más rápido.
         </Text>
 
-        {/* Selector de Categoría */}
         <TouchableOpacity
           style={styles.selectInput}
           activeOpacity={0.7}
@@ -341,7 +439,6 @@ export default function UploadProductView({
           <Ionicons name="chevron-down" size={18} color="#1F232E" />
         </TouchableOpacity>
 
-        {/* Input: Título */}
         <View style={styles.inputWrapper}>
           <TextInput
             style={styles.textInput}
@@ -354,7 +451,6 @@ export default function UploadProductView({
           <Text style={styles.charCountInside}>{title.length}/60</Text>
         </View>
 
-        {/* Textarea: Descripción */}
         <View style={styles.textareaWrapper}>
           <TextInput
             style={styles.textareaMain}
@@ -369,7 +465,6 @@ export default function UploadProductView({
           <Text style={styles.charCountInside}>{description.length}/500</Text>
         </View>
 
-        {/* Selector de Estado / Condición */}
         <TouchableOpacity
           style={styles.selectInput}
           activeOpacity={0.7}
@@ -381,7 +476,6 @@ export default function UploadProductView({
           <Ionicons name="chevron-down" size={18} color="#1F232E" />
         </TouchableOpacity>
 
-        {/* Input de Precio con Moneda */}
         <View style={styles.priceRow}>
           <TextInput
             style={[styles.textInput, { flex: 1 }]}
@@ -401,11 +495,10 @@ export default function UploadProductView({
         </View>
       </View>
 
-      {/* SECCIÓN 4: Opciones de envío */}
+      {/* SECCIÓN 4: Envíos */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionHeaderTitle}>Opciones de envío</Text>
 
-        {/* Banner de beneficios */}
         <View style={styles.shippingBanner}>
           <View style={styles.benefitItem}>
             <Ionicons name="checkmark-circle" size={16} color="#0D9488" style={{ marginRight: 6 }} />
@@ -424,11 +517,6 @@ export default function UploadProductView({
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={{ marginVertical: 8 }}>
-          <Text style={styles.linkText}>¿Dudas? Consultá las preguntas frecuentes</Text>
-        </TouchableOpacity>
-
-        {/* Switch de Envíos */}
         <View style={styles.switchRow}>
           <View>
             <Text style={styles.switchLabel}>Activar envíos</Text>
@@ -468,7 +556,7 @@ export default function UploadProductView({
         )}
       </View>
 
-      {/* SECCIÓN 5: Tus productos se verán en */}
+      {/* SECCIÓN 5: Localización, Sugerencias tipo Maps y GPS */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionHeaderTitle}>Tus productos se verán en</Text>
 
@@ -478,24 +566,51 @@ export default function UploadProductView({
             style={styles.locationInput}
             value={location}
             onChangeText={setLocation}
-            placeholder="Ej: C1629 Pilar"
+            placeholder="Escribe tu calle, barrio o ciudad..."
             placeholderTextColor="#9098B1"
           />
+          {isSearchingSuggestions ? (
+            <ActivityIndicator size="small" color="#0D9488" />
+          ) : location.length > 0 ? (
+            <TouchableOpacity onPress={() => setLocation('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color="#9098B1" />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
-        {/* Mapa / Preview Visual */}
-        <View style={styles.mapContainer}>
-          <Image source={{ uri: DEFAULT_MAP_IMAGE }} style={styles.mapImage} />
-          <View style={styles.mapPin}>
-            <Ionicons name="location" size={28} color="#EF4444" />
+        {/* Menú desplegable flotante de Sugerencias tipo Google Maps */}
+        {suggestions.length > 0 && (
+          <View style={styles.suggestionsDropdown}>
+            {suggestions.map((sugg) => (
+              <TouchableOpacity
+                key={sugg.id}
+                style={styles.suggestionRow}
+                activeOpacity={0.7}
+                onPress={() => handleSelectSuggestion(sugg)}
+              >
+                <Ionicons name="location-outline" size={16} color="#0D9488" style={{ marginRight: 8 }} />
+                <Text style={styles.suggestionText} numberOfLines={2}>
+                  {sugg.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        </View>
+        )}
+
+        {/* Mapa Interactivo con Sensor GPS */}
+        <InteractiveLocationMap
+          coordinates={coordinates}
+          onCoordinatesChange={(newCoords) => setCoordinates(newCoords)}
+          onRequestGPS={handleRequestGPS}
+          loading={isLocatingGPS}
+          loadingText="Buscando ubicación..."
+          height={200}
+        />
 
         <Text style={styles.locationDisclaimer}>
           Esta es la localización asociada a tu perfil. Salvo que la cambies, aquí es donde verán todos tus productos.
         </Text>
 
-        {/* Mensaje de Error */}
         {errorMessage && (
           <View style={styles.errorBox}>
             <Ionicons name="alert-circle" size={18} color="#EF4444" style={{ marginRight: 6 }} />
@@ -503,7 +618,6 @@ export default function UploadProductView({
           </View>
         )}
 
-        {/* BOTÓN PRINCIPAL: PUBLICAR */}
         <TouchableOpacity
           style={[styles.publishBtn, isSubmitting && styles.publishBtnDisabled]}
           activeOpacity={0.85}
@@ -521,7 +635,61 @@ export default function UploadProductView({
         </TouchableOpacity>
       </View>
 
-      {/* MODAL: Selector de Categorías */}
+      {/* MODAL 1: Opciones de Cámara vs Galería */}
+      <Modal visible={photoModalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.photoSourceCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Agregar fotos del producto</Text>
+              <TouchableOpacity onPress={() => setPhotoModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1F232E" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.photoSourceBtn}
+              activeOpacity={0.75}
+              onPress={() => {
+                setPhotoModalVisible(false);
+                handleTakePhoto();
+              }}
+            >
+              <View style={styles.photoSourceIconCircle}>
+                <Ionicons name="camera" size={24} color="#0D9488" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photoSourceBtnTitle}>Tomar foto con la cámara</Text>
+                <Text style={styles.photoSourceBtnSubtitle}>Usa la cámara en vivo para fotografiar el artículo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9098B1" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.photoSourceBtn}
+              activeOpacity={0.75}
+              onPress={() => {
+                setPhotoModalVisible(false);
+                handlePickFromGallery();
+              }}
+            >
+              <View style={styles.photoSourceIconCircle}>
+                <Ionicons name="images" size={24} color="#0D9488" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photoSourceBtnTitle}>Elegir de la galería</Text>
+                <Text style={styles.photoSourceBtnSubtitle}>Selecciona fotos guardadas en tu dispositivo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9098B1" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.photoCancelBtn} onPress={() => setPhotoModalVisible(false)}>
+              <Text style={styles.photoCancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL 2: Selector de Categorías */}
       <Modal visible={categoryModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -552,7 +720,7 @@ export default function UploadProductView({
         </View>
       </Modal>
 
-      {/* MODAL: Selector de Condición */}
+      {/* MODAL 3: Selector de Condición */}
       <Modal visible={conditionModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -581,7 +749,7 @@ export default function UploadProductView({
         </View>
       </Modal>
 
-      {/* MODAL: Selector de Moneda */}
+      {/* MODAL 4: Selector de Moneda */}
       <Modal visible={currencyModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -610,7 +778,7 @@ export default function UploadProductView({
         </View>
       </Modal>
 
-      {/* MODAL: Éxito de Publicación */}
+      {/* MODAL 5: Éxito de Publicación */}
       <Modal visible={successModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.successModalCard}>
@@ -745,8 +913,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: '#3BD7C2',
-    paddingVertical: 6,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     marginBottom: 4,
@@ -983,21 +1151,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#1F232E',
   },
-  mapContainer: {
-    height: 110,
+  suggestionsDropdown: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: -4,
+    maxHeight: 180,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 4,
+    zIndex: 50,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F1F5F9',
   },
-  mapImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  mapPin: {
-    position: 'absolute',
+  suggestionText: {
+    fontSize: 12,
+    color: '#1F232E',
+    flex: 1,
   },
   locationDisclaimer: {
     fontSize: 11,
@@ -1050,6 +1229,49 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 12,
     maxHeight: 450,
+  },
+  photoSourceCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    gap: 12,
+  },
+  photoSourceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    gap: 12,
+  },
+  photoSourceIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#CCFBF1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoSourceBtnTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F232E',
+  },
+  photoSourceBtnSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  photoCancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  photoCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
   modalHeader: {
     flexDirection: 'row',

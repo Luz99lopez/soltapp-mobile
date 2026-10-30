@@ -47,7 +47,10 @@
         {
           "locationWhenInUsePermission": "Soltapp necesita acceso a tu ubicación para situar tus productos en el mapa y mostrarlos a compradores cercanos."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
