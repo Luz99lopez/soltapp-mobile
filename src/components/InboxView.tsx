@@ -132,7 +132,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
   const unreadMessagesCount = conversations.filter((c) => c.unread).length;
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: Platform.OS === 'android' ? 120 : 80 }} showsVerticalScrollIndicator={false}>
       {/* 1. Selector de Pestañas: Mensajes | Notificaciones */}
       <View style={styles.segmentContainer}>
         <View style={styles.segmentWrapper}>

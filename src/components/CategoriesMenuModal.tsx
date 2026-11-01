@@ -5,13 +5,13 @@ import {
   View,
   TouchableOpacity,
   Modal,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Platform,
   Image,
   TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
 // Componentes SVG oficiales de Soltapp
@@ -119,8 +119,8 @@ export default function CategoriesMenuModal({
       transparent={false}
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="dark-content" />
 
         <View style={styles.container}>
           {/* ========================================================= */}
@@ -337,6 +337,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 0,
   },
   container: {
     flex: 1,
@@ -489,7 +490,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   bottomNav: {
-    height: 60,
+    height: Platform.OS === 'android' ? 88 : 60,
+    paddingBottom: Platform.OS === 'android' ? 32 : 8,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',

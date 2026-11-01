@@ -4,7 +4,6 @@ import {
   Text,
   View,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Image,
   Dimensions,
@@ -14,6 +13,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { productService, ProductDetail, ProductListItem } from '../services';
@@ -237,8 +237,8 @@ export default function ProductDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" />
 
       {/* 1. Header Navbar Superior Exacto a Soltapp */}
       <View style={styles.header}>
@@ -597,6 +597,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 0,
   },
   header: {
     flexDirection: 'row',
@@ -691,7 +692,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: 110,
     gap: 12,
   },
   heroGalleryContainer: {
@@ -1155,6 +1156,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    paddingBottom: Platform.OS === 'android' ? 44 : 16,
   },
   bottomNav: {
     flexDirection: 'row',

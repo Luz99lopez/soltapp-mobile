@@ -1,17 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
+  Keyboard,
   Text,
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,7 +44,7 @@ export default function ChatScreen() {
   const productPrice = params.productPrice || '$ 50.000';
   const sellerName = params.sellerName || 'Alex Silva';
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<any>(null);
 
   // Mensajes iniciales exactos a la imagen de referencia
   const initialMessages: ChatMessage[] = [
@@ -72,6 +73,16 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [isTypingBarVisible, setIsTypingBarVisible] = useState(false);
   const [isCounterpartTyping, setIsCounterpartTyping] = useState(false);
+
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Cargar historial guardado o iniciar con los mensajes por defecto
   useEffect(() => {
@@ -163,8 +174,8 @@ export default function ChatScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" />
 
       {/* 1. Header con Producto y Retroceso */}
       <View style={styles.header}>
@@ -282,23 +293,24 @@ export default function ChatScreen() {
             )}
           </View>
 
-          {/* 5. Botón Inferior "Chatea" */}
-          {!isTypingBarVisible && (
-            <View style={styles.actionButtonContainer}>
-              <TouchableOpacity
-                style={styles.chateaButton}
-                activeOpacity={0.8}
-                onPress={() => setIsTypingBarVisible(true)}
-              >
-                <Text style={styles.chateaButtonText}>Chatea</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
+          </ScrollView>
+
+        {/* 5. Botón Inferior "Chatea" */}
+        {!isTypingBarVisible && (
+          <View style={[styles.actionButtonContainer, { paddingBottom: Platform.OS === 'android' ? 44 : 20 }]}>
+            <TouchableOpacity
+              style={styles.chateaButton}
+              activeOpacity={0.8}
+              onPress={() => setIsTypingBarVisible(true)}
+            >
+              <Text style={styles.chateaButtonText}>Chatea</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* 6. Barra Interactiva de Texto */}
         {isTypingBarVisible && (
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, { paddingBottom: isKeyboardVisible ? 10 : (Platform.OS === 'android' ? 38 : 14) }]}>
             <TouchableOpacity
               style={styles.closeInputBtn}
               onPress={() => setIsTypingBarVisible(false)}
@@ -344,6 +356,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 0,
   },
   keyboardContainer: {
     flex: 1,
@@ -545,8 +558,10 @@ const styles = StyleSheet.create({
   // 5. Botón Chatea
   actionButtonContainer: {
     alignItems: 'center',
-    marginTop: 36,
-    marginBottom: 20,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
   chateaButton: {
     width: '72%',
