@@ -51,39 +51,40 @@ export interface CategoryItem {
   name: string;
   IconComponent: React.FC<any>;
   hasChevron?: boolean;
+  slug?: string; // Slug de la tabla categories en Supabase (sin slug = "Ver todo")
 }
 
 // 1. Categorías Principales (Todas con Chevron según diseño Figma)
 export const MAIN_CATEGORIES: CategoryItem[] = [
-  { id: 'm1', name: 'Autos', IconComponent: AutoIcon, hasChevron: true },
-  { id: 'm2', name: 'Motos', IconComponent: MotoIcon, hasChevron: true },
-  { id: 'm3', name: 'Motor y accesorios', IconComponent: MotorIcon, hasChevron: true },
-  { id: 'm4', name: 'Moda y accesorios', IconComponent: ModaIcon, hasChevron: true },
-  { id: 'm5', name: 'Inmobiliaria', IconComponent: InmobiliariaIcon, hasChevron: true },
+  { id: 'm1', name: 'Autos', IconComponent: AutoIcon, hasChevron: true, slug: 'autos' },
+  { id: 'm2', name: 'Motos', IconComponent: MotoIcon, hasChevron: true, slug: 'motos' },
+  { id: 'm3', name: 'Motor y accesorios', IconComponent: MotorIcon, hasChevron: true, slug: 'motor-y-accesorios' },
+  { id: 'm4', name: 'Moda y accesorios', IconComponent: ModaIcon, hasChevron: true, slug: 'moda-y-accesorios' },
+  { id: 'm5', name: 'Inmobiliaria', IconComponent: InmobiliariaIcon, hasChevron: true, slug: 'inmobiliaria' },
 ];
 
 // 2. Ver Todas las Categorías (Exacto a la lista de referencia)
 export const ALL_CATEGORIES: CategoryItem[] = [
   { id: 'all0', name: 'Ver todo', IconComponent: VerTodoIcon, hasChevron: false },
-  { id: 'all1', name: 'Autos', IconComponent: AutoIcon, hasChevron: false },
-  { id: 'all2', name: 'Motos', IconComponent: MotoIcon, hasChevron: false },
-  { id: 'all3', name: 'Motor y accesorios', IconComponent: MotorIcon, hasChevron: true },
-  { id: 'all4', name: 'Moda y accesorios', IconComponent: ModaIcon, hasChevron: true },
-  { id: 'all5', name: 'Inmobiliaria', IconComponent: InmobiliariaIcon, hasChevron: false },
-  { id: 'all6', name: 'Tecnología y electrónica', IconComponent: TecnologiaIcon, hasChevron: true },
-  { id: 'all7', name: 'Celulares y telefonía', IconComponent: MovilesIcon, hasChevron: true },
-  { id: 'all8', name: 'Informática', IconComponent: InformaticaIcon, hasChevron: true },
-  { id: 'all9', name: 'Deporte y ocio', IconComponent: DeporteIcon, hasChevron: true },
-  { id: 'all10', name: 'Bicicletas', IconComponent: BicicletasIcon, hasChevron: true },
-  { id: 'all11', name: 'Consolas y videojuegos', IconComponent: ConsolasIcon, hasChevron: true },
-  { id: 'all12', name: 'Hogar y jardín', IconComponent: HogarIcon, hasChevron: true },
-  { id: 'all13', name: 'Electrodomésticos', IconComponent: ElectrodomesticosIcon, hasChevron: true },
-  { id: 'all14', name: 'Cine, libros y música', IconComponent: CineMusicaIcon, hasChevron: true },
-  { id: 'all15', name: 'Niños y bebés', IconComponent: NinosBebesIcon, hasChevron: true },
-  { id: 'all16', name: 'Coleccionismo', IconComponent: ColeccionismoIcon, hasChevron: true },
-  { id: 'all17', name: 'Construcción y reformas', IconComponent: ConstruccionIcon, hasChevron: true },
-  { id: 'all18', name: 'Industria y agricultura', IconComponent: IndustriaIcon, hasChevron: true },
-  { id: 'all19', name: 'Otros', IconComponent: OtrosIcon, hasChevron: false },
+  { id: 'all1', name: 'Autos', IconComponent: AutoIcon, hasChevron: false, slug: 'autos' },
+  { id: 'all2', name: 'Motos', IconComponent: MotoIcon, hasChevron: false, slug: 'motos' },
+  { id: 'all3', name: 'Motor y accesorios', IconComponent: MotorIcon, hasChevron: true, slug: 'motor-y-accesorios' },
+  { id: 'all4', name: 'Moda y accesorios', IconComponent: ModaIcon, hasChevron: true, slug: 'moda-y-accesorios' },
+  { id: 'all5', name: 'Inmobiliaria', IconComponent: InmobiliariaIcon, hasChevron: false, slug: 'inmobiliaria' },
+  { id: 'all6', name: 'Tecnología y electrónica', IconComponent: TecnologiaIcon, hasChevron: true, slug: 'tecnologia-y-electronica' },
+  { id: 'all7', name: 'Celulares y telefonía', IconComponent: MovilesIcon, hasChevron: true, slug: 'telefonia-celulares-y-smartwatches' },
+  { id: 'all8', name: 'Informática', IconComponent: InformaticaIcon, hasChevron: true, slug: 'informatica-computadoras-y-tablets' },
+  { id: 'all9', name: 'Deporte y ocio', IconComponent: DeporteIcon, hasChevron: true, slug: 'deporte-y-ocio' },
+  { id: 'all10', name: 'Bicicletas', IconComponent: BicicletasIcon, hasChevron: true, slug: 'bicicletas' },
+  { id: 'all11', name: 'Consolas y videojuegos', IconComponent: ConsolasIcon, hasChevron: true, slug: 'gaming-consolas-y-videojuegos' },
+  { id: 'all12', name: 'Hogar y jardín', IconComponent: HogarIcon, hasChevron: true, slug: 'hogar-y-jardin' },
+  { id: 'all13', name: 'Electrodomésticos', IconComponent: ElectrodomesticosIcon, hasChevron: true, slug: 'electrodomesticos' },
+  { id: 'all14', name: 'Cine, libros y música', IconComponent: CineMusicaIcon, hasChevron: true, slug: 'cine-libros-y-musica' },
+  { id: 'all15', name: 'Niños y bebés', IconComponent: NinosBebesIcon, hasChevron: true, slug: 'ninos-y-bebes' },
+  { id: 'all16', name: 'Coleccionismo', IconComponent: ColeccionismoIcon, hasChevron: true, slug: 'coleccionismo' },
+  { id: 'all17', name: 'Construcción y reformas', IconComponent: ConstruccionIcon, hasChevron: true, slug: 'construccion-y-reformas' },
+  { id: 'all18', name: 'Industria y agricultura', IconComponent: IndustriaIcon, hasChevron: true, slug: 'industria-y-agricultura' },
+  { id: 'all19', name: 'Otros', IconComponent: OtrosIcon, hasChevron: false, slug: 'otros' },
 ];
 
 interface CategoriesMenuModalProps {

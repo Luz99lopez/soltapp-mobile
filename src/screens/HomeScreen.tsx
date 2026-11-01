@@ -17,7 +17,7 @@ import {
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
-import { fetchHomeProducts, ProductListItem } from '../services';
+import { fetchHomeProducts, ProductListItem, categoryService, Category } from '../services';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
 import BottomNavbar, { BottomNavTab } from '../components/BottomNavbar';
 import TopNavbar from '../components/TopNavbar';
@@ -52,13 +52,32 @@ import SiguienteIcon from '../../assets/svgs/Siguiente.svg';
 import EstrellaIcon from '../../assets/svgs/Estrella.svg';
 
 // Datos de Categorías con sus respectivos SVGs (Exacto al diseño y orden de Figma)
+// slug = categoría de Supabase que filtra; label = nombre en una sola línea
 const CATEGORIES = [
-  { id: '1', name: 'Autos', IconComponent: AutoIcon },
-  { id: '2', name: 'Motos', IconComponent: MotoIcon },
-  { id: '3', name: 'Motor y\naccesorios', IconComponent: MotorIcon },
-  { id: '4', name: 'Moda y\naccesorios', IconComponent: ModaIcon },
-  { id: '5', name: 'Inmobilia\nria', IconComponent: InmobiliariaIcon },
+  { id: '1', name: 'Autos', label: 'Autos', slug: 'autos', IconComponent: AutoIcon },
+  { id: '2', name: 'Motos', label: 'Motos', slug: 'motos', IconComponent: MotoIcon },
+  { id: '3', name: 'Motor y\naccesorios', label: 'Motor y accesorios', slug: 'motor-y-accesorios', IconComponent: MotorIcon },
+  { id: '4', name: 'Moda y\naccesorios', label: 'Moda y accesorios', slug: 'moda-y-accesorios', IconComponent: ModaIcon },
+  { id: '5', name: 'Inmobilia\nria', label: 'Inmobiliaria', slug: 'inmobiliaria', IconComponent: InmobiliariaIcon },
 ];
+
+// Devuelve el id de la categoría con ese slug más los de todas sus subcategorías
+const collectCategoryIds = (nodes: Category[], slug: string): number[] => {
+  for (const node of nodes) {
+    if (node.slug === slug) {
+      const ids: number[] = [];
+      const addWithChildren = (cat: Category) => {
+        ids.push(cat.id);
+        cat.children?.forEach(addWithChildren);
+      };
+      addWithChildren(node);
+      return ids;
+    }
+    const found = collectCategoryIds(node.children || [], slug);
+    if (found.length > 0) return found;
+  }
+  return [];
+};
 
 const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
 
@@ -93,6 +112,22 @@ export default function HomeScreen() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  // Filtro por categoría (carrusel o modal "Más categorias")
+  const [selectedCategory, setSelectedCategory] = useState<{ slug: string; name: string } | null>(null);
+  const [categoryTree, setCategoryTree] = useState<Category[]>([]);
+
+  useEffect(() => {
+    categoryService
+      .getCategoryTree()
+      .then(setCategoryTree)
+      .catch((err) => console.error('[HomeScreen.loadCategories] Error:', err));
+  }, []);
+
+  // Tocar la categoría ya elegida la desmarca y vuelve a mostrar todo
+  const handleCategoryPress = (category: { slug: string; name: string }) => {
+    setSelectedCategory((prev) => (prev?.slug === category.slug ? null : category));
+  };
 
   useEffect(() => {
     if (params?.tab === 'inbox') {
@@ -161,8 +196,18 @@ export default function HomeScreen() {
     return url;
   };
 
-  // Filtrado de publicaciones por barra de búsqueda
+  // Ids de la categoría elegida y sus subcategorías (vacío si no existe en Supabase)
+  const selectedCategoryIds = selectedCategory
+    ? collectCategoryIds(categoryTree, selectedCategory.slug)
+    : [];
+
+  // Filtrado de publicaciones por categoría y barra de búsqueda
   const filteredProducts = products.filter((p) => {
+    if (selectedCategory) {
+      const matchesCategory =
+        selectedCategoryIds.includes(p.category_id) || p.category?.slug === selectedCategory.slug;
+      if (!matchesCategory) return false;
+    }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
@@ -172,9 +217,14 @@ export default function HomeScreen() {
     );
   });
 
-  // Distribución de productos en secciones sin duplicación innecesaria
-  const nearbyProducts = filteredProducts.length > 2 ? filteredProducts.slice(0, 2) : filteredProducts;
-  const recentProducts = filteredProducts.length > 2 ? filteredProducts.slice(2) : filteredProducts;
+  // Distribución de productos en secciones sin duplicación innecesaria.
+  // Con una categoría elegida se muestran todos juntos en una sola grilla.
+  const nearbyProducts = selectedCategory
+    ? []
+    : filteredProducts.length > 2 ? filteredProducts.slice(0, 2) : filteredProducts;
+  const recentProducts = selectedCategory
+    ? filteredProducts
+    : filteredProducts.length > 2 ? filteredProducts.slice(2) : filteredProducts;
 
   const [favorites, setFavorites] = useState<string[]>([]);
   const [categoriesModalVisible, setCategoriesModalVisible] = useState<boolean>(false);
@@ -620,12 +670,18 @@ export default function HomeScreen() {
             >
               {CATEGORIES.map((cat) => {
                 const Icon = cat.IconComponent;
+                const isSelected = selectedCategory?.slug === cat.slug;
                 return (
-                  <TouchableOpacity key={cat.id} style={styles.categoryItem} activeOpacity={0.75}>
-                    <View style={styles.categoryCircle}>
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={styles.categoryItem}
+                    activeOpacity={0.75}
+                    onPress={() => handleCategoryPress({ slug: cat.slug, name: cat.label })}
+                  >
+                    <View style={[styles.categoryCircle, isSelected && styles.categoryCircleActive]}>
                       <Icon width={28} height={28} />
                     </View>
-                    <Text style={styles.categoryName} numberOfLines={2}>
+                    <Text style={[styles.categoryName, isSelected && styles.categoryNameActive]} numberOfLines={2}>
                       {cat.name}
                     </Text>
                   </TouchableOpacity>
@@ -646,18 +702,26 @@ export default function HomeScreen() {
                   No se encontraron productos
                 </Text>
                 <Text style={{ marginTop: 4, fontSize: 13, color: '#9098B1', textAlign: 'center' }}>
-                  {searchQuery.trim() ? 'Prueba con otro término de búsqueda.' : 'Sé el primero en publicar un producto.'}
+                  {searchQuery.trim()
+                    ? 'Prueba con otro término de búsqueda.'
+                    : selectedCategory
+                      ? `Todavía no hay publicaciones en ${selectedCategory.name}.`
+                      : 'Sé el primero en publicar un producto.'}
                 </Text>
                 <TouchableOpacity
-                  onPress={loadProducts}
+                  onPress={selectedCategory ? () => setSelectedCategory(null) : loadProducts}
                   style={{ marginTop: 16, backgroundColor: '#E6FDF8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 }}
                 >
-                  <Text style={{ color: '#0D9488', fontSize: 13, fontWeight: '600' }}>Actualizar</Text>
+                  <Text style={{ color: '#0D9488', fontSize: 13, fontWeight: '600' }}>
+                    {selectedCategory ? 'Ver todas las categorías' : 'Actualizar'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
-                {/* Sección: Cerca de donde estás - Pilar */}
+                {/* Sección: Cerca de donde estás - Pilar (oculta al filtrar por categoría) */}
+                {nearbyProducts.length > 0 && (
+                <>
                 <View style={styles.sectionHeader}>
                   <View style={styles.sectionTitleWithLocation}>
                     <Text style={styles.sectionTitle}>Cerca de donde estás</Text>
@@ -718,11 +782,15 @@ export default function HomeScreen() {
                     );
                   })}
                 </ScrollView>
+                </>
+                )}
 
-                {/* Sección: Lo recién publicado */}
+                {/* Sección: Lo recién publicado (o la categoría elegida) */}
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Lo recién publicado</Text>
-                  <TouchableOpacity>
+                  <Text style={styles.sectionTitle}>
+                    {selectedCategory ? selectedCategory.name : 'Lo recién publicado'}
+                  </Text>
+                  <TouchableOpacity onPress={() => setSelectedCategory(null)}>
                     <Text style={styles.seeAllText}>Ver todo</Text>
                   </TouchableOpacity>
                 </View>
@@ -790,6 +858,8 @@ export default function HomeScreen() {
           }}
           onSelectCategory={(category) => {
             setCategoriesModalVisible(false);
+            // "Ver todo" no tiene slug: quita el filtro
+            setSelectedCategory(category.slug ? { slug: category.slug, name: category.name } : null);
           }}
         />
       </View>
@@ -1420,6 +1490,15 @@ const styles = StyleSheet.create({
     color: '#9098B1',
     textAlign: 'center',
     lineHeight: 15,
+  },
+  categoryCircleActive: {
+    borderWidth: 2,
+    borderColor: PRIMARY_COLOR,
+    backgroundColor: '#E6FDF8',
+  },
+  categoryNameActive: {
+    color: '#0D9488',
+    fontWeight: '700',
   },
   moreCategoriesText: {
     fontSize: 14,
