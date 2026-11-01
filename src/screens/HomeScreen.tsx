@@ -17,7 +17,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomNavbar, { BottomNavTab } from '../components/BottomNavbar';
 import CategoriesMenuModal from '../components/CategoriesMenuModal';
 import InboxView from '../components/InboxView';
+
 import TopNavbar from '../components/TopNavbar';
+
+import { meetupOrderService } from '../services/meetupOrderService';
+import { accountService, SoltappUser, PRESET_USERS } from '../services/accountService';
+
 import UploadProductView from '../components/UploadProductView';
 import { fetchHomeProducts, ProductListItem } from '../services';
 import { supabase } from '../supabase';
@@ -225,20 +230,58 @@ export default function HomeScreen() {
     if (meta.location) setEditLocation(meta.location);
   };
 
-  const userName =
-    currentUser?.user_metadata?.full_name ||
-    currentUser?.user_metadata?.name ||
-    `${editFirstName} ${editLastName}`.trim() ||
-    (currentUser?.email ? currentUser.email.split('@')[0] : 'Manuel Sans');
+  const [currentAccount, setCurrentAccount] = useState<SoltappUser>(PRESET_USERS[0]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAccount = async () => {
+      try {
+        const user = await accountService.getCurrentUser();
+        if (isMounted) {
+          setCurrentAccount(user);
+        }
+      } catch {}
+    };
+
+    fetchAccount();
+
+    const handleStorage = () => {
+      fetchAccount();
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorage);
+    }
+
+    return () => {
+      isMounted = false;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorage);
+      }
+    };
+  }, []);
+
+  const userName = currentAccount.fullName;
   const userAvatar =
+    currentAccount.avatarUrl ||
     currentUser?.user_metadata?.avatar_url ||
     currentUser?.user_metadata?.picture ||
     null;
+  const userYear = currentAccount.sinceYear;
 
-  const userYear = currentUser?.created_at
-    ? new Date(currentUser.created_at).getFullYear()
-    : '2026';
+  const handleSwitchAccount = async () => {
+    const presetUsers = accountService.getPresetUsers();
+    const currentIndex = presetUsers.findIndex((u) => u.id === currentAccount.id);
+    const nextIndex = (currentIndex + 1) % presetUsers.length;
+    const nextUser = presetUsers[nextIndex];
+
+    await accountService.switchUser(nextUser.id);
+    setCurrentAccount(nextUser);
+    Alert.alert(
+      'Usuario cambiado',
+      `Ahora estás navegando como ${nextUser.fullName}. Tu buzón, publicaciones y compras corresponden a este usuario.`
+    );
+  };
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) =>
@@ -282,14 +325,57 @@ export default function HomeScreen() {
     }
   };
 
+  const handlePressCompras = async () => {
+    const latest = await meetupOrderService.getLatestOrder('buyer', currentAccount.id);
+    if (latest) {
+      router.push({
+        pathname: '/order/[id]',
+        params: {
+          id: latest.id,
+          role: 'buyer',
+          title: latest.product?.title || 'Sillas (Switch)',
+          price: String(latest.product?.price || '$ 400'),
+          sellerName: latest.seller?.full_name || 'Vendedor',
+          imageUri: latest.product?.images?.[0] || '',
+        },
+      } as any);
+    } else {
+      router.push('/cart' as any);
+    }
+  };
+
+  const handlePressVentas = async () => {
+    const latest = await meetupOrderService.getLatestOrder('seller', currentAccount.id);
+    if (latest) {
+      router.push({
+        pathname: '/order/[id]',
+        params: {
+          id: latest.id,
+          role: 'seller',
+          title: latest.product?.title || 'Sillas (Switch)',
+          price: String(latest.product?.price || '$ 400'),
+          sellerName: latest.seller?.full_name || 'Tú (Vendedor)',
+          buyerName: latest.buyer?.full_name || 'Comprador',
+          imageUri: latest.product?.images?.[0] || '',
+        },
+      } as any);
+    } else {
+      setActiveTab('inbox');
+    }
+  };
+
   return (
+
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+
+
+
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.container}>
-        {/* ========================================================= */}
+        {/* = */}
         {/* 1. HEADER NAVBAR SUPERIOR OFICIAL (COMPARTIDO)           */}
-        {/* ========================================================= */}
+        {/* = */}
         <TopNavbar
           activeScreen={activeTab === 'profile' ? 'profile' : 'home'}
           searchQuery={searchQuery}
@@ -306,13 +392,13 @@ export default function HomeScreen() {
           }}
         />
 
-        {/* ========================================================= */}
+        {/* = */}
         {/* 2. CONTENIDO PRINCIPAL: FEED HOME vs MENÚ "TÚ"            */}
-        {/* ========================================================= */}
+        {/* = */}
         {activeTab === 'profile' ? (
-          /* ========================================================= */
+          /* = */
           /* MENÚ DESPLEGABLE / VISTA "TÚ" (Figma Referencia 1)       */
-          /* ========================================================= */
+          /* = */
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.tuMenuScrollContent}
@@ -346,7 +432,7 @@ export default function HomeScreen() {
                   <EstrellaIcon width={16} height={16} />
                   <EstrellaIcon width={16} height={16} />
                   <EstrellaIcon width={16} height={16} />
-                  <Text style={styles.tuRatingCount}>(1)</Text>
+                  <Text style={styles.tuRatingCount}>({currentAccount.rating})</Text>
                 </View>
 
                 <Text style={styles.tuMemberSince}>En soltapp desde {userYear}</Text>
@@ -370,10 +456,14 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* SECCIÓN: TRANSACCIONES */}
+            {/* SECCIÓN: TRANSACCIONES (Cualquier cuenta puede comprar y vender) */}
             <View style={styles.tuSection}>
               <Text style={styles.tuSectionTitle}>TRANSACCIONES</Text>
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handlePressCompras}
+              >
                 <View style={styles.tuMenuItemLeft}>
                   <ComprasIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Compras</Text>
@@ -381,7 +471,11 @@ export default function HomeScreen() {
                 <SiguienteIcon width={14} height={14} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handlePressVentas}
+              >
                 <View style={styles.tuMenuItemLeft}>
                   <VentasIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Ventas</Text>
@@ -412,6 +506,21 @@ export default function HomeScreen() {
                 </View>
                 <SiguienteIcon width={14} height={14} />
               </TouchableOpacity>
+
+              {/* Conmutador de Usuario para pruebas en desarrollo */}
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handleSwitchAccount}
+              >
+                <View style={styles.tuMenuItemLeft}>
+                  <Ionicons name="people-outline" size={20} color="#0D9488" style={{ marginRight: 12 }} />
+                  <Text style={[styles.tuMenuItemText, { color: '#0D9488', fontWeight: '700' }]}>
+                    Cambiar usuario activo (Simulación)
+                  </Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
             </View>
 
             {/* SECCIÓN: OTROS */}
@@ -439,9 +548,9 @@ export default function HomeScreen() {
             </View>
           </ScrollView>
         ) : activeTab === 'inbox' ? (
-          /* ========================================================= */
+          /* = */
           /* BANDEJA DE ENTRADA / BUZÓN (Captura Referencia)          */
-          /* ========================================================= */
+          /* = */
           <InboxView
             onOpenConversation={(conv) => {
               router.push({
@@ -455,9 +564,9 @@ export default function HomeScreen() {
             }}
           />
         ) : activeTab === 'upload' ? (
-          /* ========================================================= */
+          /* = */
           /* VISTA SUBIR PRODUCTO / ANUNCIO (Figma Referencia)        */
-          /* ========================================================= */
+          /* = */
           <UploadProductView
             userLocation={editLocation || 'C1629 Pilar'}
             onProductCreated={() => {
@@ -663,7 +772,7 @@ export default function HomeScreen() {
           </ScrollView>
         )}
 
-        {/* ========================================================= */}
+        {/* = */}
         {/* 3. BARRA DE NAVEGACIÓN INFERIOR (COMPONENTE COMPARTIDO) */}
         <BottomNavbar activeTab={activeTab} onTabPress={(tab: BottomNavTab) => setActiveTab(tab)} />
 
@@ -792,9 +901,9 @@ const styles = StyleSheet.create({
     paddingBottom: 130,
   },
 
-  // ==========================================
+  // 
   // ESTILOS PANTALLA "TU PERFIL" (Figma exacto)
-  // ==========================================
+  // 
   editProfileScrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -1050,9 +1159,9 @@ const styles = StyleSheet.create({
     color: '#0D9488',
   },
 
-  // ==========================================
+  // 
   // ESTILOS MENÚ DESPLEGABLE "TÚ" (Figma Referencia 1)
-  // ==========================================
+  // 
   tuMenuScrollContent: {
     paddingHorizontal: 0,
     paddingBottom: 110,
@@ -1104,6 +1213,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: TEXT_DARK,
     marginBottom: 4,
+  },
+  roleBadgeHeaderPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+    marginBottom: 4,
+  },
+  roleBadgeSeller: {
+    backgroundColor: '#CCFBF1',
+  },
+  roleBadgeBuyer: {
+    backgroundColor: '#F1F5F9',
+  },
+  roleBadgeHeaderPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  roleBadgeSellerText: {
+    color: '#0D9488',
+  },
+  roleBadgeBuyerText: {
+    color: '#475569',
   },
   tuRatingRow: {
     flexDirection: 'row',
