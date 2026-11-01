@@ -5,7 +5,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Platform,
@@ -14,6 +13,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
@@ -25,6 +25,9 @@ import InboxView from '../components/InboxView';
 import { meetupOrderService } from '../services/meetupOrderService';
 import { accountService, SoltappUser, PRESET_USERS } from '../services/accountService';
 import UploadProductView from '../components/UploadProductView';
+import FavoritesScreen from './FavoritesScreen';
+import FavoritesFeedback from '../components/FavoritesFeedback';
+import { useFavorites } from '../contexts/FavoritesProvider';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
 import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
@@ -95,7 +98,9 @@ export default function HomeScreen() {
   }, [loadProducts]);
 
   useEffect(() => {
-    if (params?.tab === 'inbox') {
+    if (params?.tab === 'home') {
+      setActiveTab('home');
+    } else if (params?.tab === 'inbox') {
       setActiveTab('inbox');
     } else if (params?.tab === 'upload') {
       setActiveTab('upload');
@@ -176,7 +181,8 @@ export default function HomeScreen() {
   const nearbyProducts = filteredProducts.length > 2 ? filteredProducts.slice(0, 2) : filteredProducts;
   const recentProducts = filteredProducts.length > 2 ? filteredProducts.slice(2) : filteredProducts;
 
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const { entries: favoriteEntries, pending: favoritePending, loading: favoritesLoading, ready: favoritesReady, toggle: toggleFavorite } = useFavorites();
+  const favorites = favoriteEntries.map((entry) => entry.productId);
   const [categoriesModalVisible, setCategoriesModalVisible] = useState<boolean>(false);
 
   const handleProductPress = (productId: string) => {
@@ -290,12 +296,6 @@ export default function HomeScreen() {
     );
   };
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace('/login' as any);
@@ -398,6 +398,7 @@ export default function HomeScreen() {
         {/* ========================================================= */}
         {/* 2. CONTENIDO PRINCIPAL: FEED HOME vs MENÚ "TÚ"            */}
         {/* ========================================================= */}
+        <FavoritesFeedback />
         {activeTab === 'profile' ? (
           /* ========================================================= */
           /* MENÚ DESPLEGABLE / VISTA "TÚ" (Figma Referencia 1)       */
@@ -566,6 +567,8 @@ export default function HomeScreen() {
               } as any);
             }}
           />
+        ) : activeTab === 'favorites' ? (
+          <FavoritesScreen searchQuery={searchQuery} />
         ) : activeTab === 'upload' ? (
           /* ========================================================= */
           /* VISTA SUBIR PRODUCTO / ANUNCIO (Figma Referencia)        */
@@ -692,7 +695,11 @@ export default function HomeScreen() {
                           <Image source={{ uri: coverUrl }} style={styles.productImage} />
                           <TouchableOpacity
                             style={styles.favoriteButton}
-                            onPress={() => toggleFavorite(prod.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={isFav ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                            accessibilityState={{ selected: isFav, disabled: !favoritesReady || favoritesLoading || favoritePending.includes(prod.id) }}
+                            disabled={!favoritesReady || favoritesLoading || favoritePending.includes(prod.id)}
+                            onPress={(event) => { event.stopPropagation(); void toggleFavorite(prod.id, prod); }}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
                             <Ionicons
@@ -744,7 +751,11 @@ export default function HomeScreen() {
                           <Image source={{ uri: coverUrl }} style={styles.productImage} />
                           <TouchableOpacity
                             style={styles.favoriteButton}
-                            onPress={() => toggleFavorite(prod.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={isFav ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                            accessibilityState={{ selected: isFav, disabled: !favoritesReady || favoritesLoading || favoritePending.includes(prod.id) }}
+                            disabled={!favoritesReady || favoritesLoading || favoritePending.includes(prod.id)}
+                            onPress={(event) => { event.stopPropagation(); void toggleFavorite(prod.id, prod); }}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
                             <Ionicons

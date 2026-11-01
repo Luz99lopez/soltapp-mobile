@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import { FavoritesProvider } from '../src/contexts/FavoritesProvider';
 
 import { useColorScheme } from '@/components/useColorScheme';
 
@@ -48,6 +49,7 @@ const SoltappTheme = {
 function RootLayoutNav() {
   return (
     <ThemeProvider value={SoltappTheme}>
+      <FavoritesProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="splash" options={{ headerShown: false }} />
@@ -68,6 +70,7 @@ function RootLayoutNav() {
         <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
+      </FavoritesProvider>
     </ThemeProvider>
   );
 }
