@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Alert,
   Image,
   Modal,
@@ -129,10 +130,27 @@ export default function UploadProductView({
     const timer = setTimeout(async () => {
       try {
         setIsSearchingSuggestions(true);
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=5&addressdetails=1`;
-        const res = await fetch(url, { headers: { 'Accept-Language': 'es' } });
-        if (res.ok) {
-          const data = await res.json();
+        // Priorizar Argentina para resultados locales más cercanos y relevantes
+        let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=5&addressdetails=1&countrycodes=ar`;
+        let res = await fetch(url, {
+          headers: {
+            'Accept-Language': 'es',
+            'User-Agent': 'SoltappMobile/1.0 (soltapp.app@gmail.com)',
+          },
+        });
+        let data = res.ok ? await res.json() : [];
+        if (!data || data.length === 0) {
+          // Búsqueda global si no hubo resultados locales
+          url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=5&addressdetails=1`;
+          res = await fetch(url, {
+            headers: {
+              'Accept-Language': 'es',
+              'User-Agent': 'SoltappMobile/1.0 (soltapp.app@gmail.com)',
+            },
+          });
+          data = res.ok ? await res.json() : [];
+        }
+        if (data && Array.isArray(data)) {
           setSuggestions(
             data.map((item: any) => ({
               id: String(item.place_id || Math.random()),
@@ -147,7 +165,7 @@ export default function UploadProductView({
       } finally {
         setIsSearchingSuggestions(false);
       }
-    }, 450);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [location]);
@@ -218,10 +236,11 @@ export default function UploadProductView({
   // 4. Seleccionar una sugerencia tipo Maps
   const handleSelectSuggestion = (sugg: { name: string; lat: number; lon: number }) => {
     const parts = sugg.name.split(',');
-    const shortAddress = parts.slice(0, 2).join(',').trim();
+    const shortAddress = parts.slice(0, 3).join(',').trim();
     setLocation(shortAddress || sugg.name);
     setCoordinates({ latitude: sugg.lat, longitude: sugg.lon });
     setSuggestions([]);
+    Keyboard.dismiss();
   };
 
   // 5. Obtener la ubicación GPS del dispositivo móvil
@@ -323,7 +342,7 @@ export default function UploadProductView({
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <Text style={styles.mainTitle}>Subí tu anuncio</Text>
 
       {/* Hero Banner */}
@@ -568,6 +587,35 @@ export default function UploadProductView({
             onChangeText={setLocation}
             placeholder="Escribe tu calle, barrio o ciudad..."
             placeholderTextColor="#9098B1"
+            returnKeyType="search"
+            onSubmitEditing={async () => {
+              if (suggestions.length > 0) {
+                handleSelectSuggestion(suggestions[0]);
+              } else if (location.trim().length >= 3) {
+                try {
+                  setIsSearchingSuggestions(true);
+                  const searchUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location.trim())}&format=json&limit=1&addressdetails=1&countrycodes=ar`;
+                  const resp = await fetch(searchUrl, {
+                    headers: {
+                      'Accept-Language': 'es',
+                      'User-Agent': 'SoltappMobile/1.0 (soltapp.app@gmail.com)',
+                    },
+                  });
+                  const dt = resp.ok ? await resp.json() : [];
+                  if (dt && dt.length > 0) {
+                    handleSelectSuggestion({
+                      name: dt[0].display_name,
+                      lat: parseFloat(dt[0].lat),
+                      lon: parseFloat(dt[0].lon),
+                    });
+                  }
+                } catch {
+                  // ignorar
+                } finally {
+                  setIsSearchingSuggestions(false);
+                }
+              }
+            }}
           />
           {isSearchingSuggestions ? (
             <ActivityIndicator size="small" color="#0D9488" />
