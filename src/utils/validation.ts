@@ -1,12 +1,11 @@
 import { z } from 'zod';
 
 /**
- * Reglas de validación de las pantallas de autenticación de Soltapp:
- * Login, Registro, Recuperar contraseña y Cambiar contraseña.
+ * Reglas de validación de Soltapp:
+ * - Autenticación: Login, Registro, Recuperar contraseña y Cambiar contraseña.
+ * - Alta de producto (UploadProductView).
+ * - Carrito y Compra (CartScreen).
  *
- * Copian las reglas que hoy están escritas dentro de
- * src/screens/LoginScreen.tsx, RegisterScreen.tsx,
- * ForgotPasswordScreen.tsx y ResetPasswordScreen.tsx.
  * No usan nada de React Native, así que se prueban directo con Jest.
  */
 
@@ -111,8 +110,6 @@ export const forgotPasswordSchema = z
 /**
  * Cambiar contraseña (handleUpdatePassword):
  * 1) campos vacíos  2) 8+ caracteres  3) contraseñas iguales.
- * Nota: la condición exacta de "vacíos" está una línea antes de la que se revisó;
- * se asume que es !password || !confirmPassword.
  */
 export const resetPasswordSchema = z
   .object({
@@ -145,3 +142,109 @@ export function primerError(resultado: {
   if (resultado.success) return null;
   return resultado.error?.issues[0]?.message ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Alta de producto (UploadProductView.handlePublish)
+// ---------------------------------------------------------------------------
+
+export const PRODUCT_LIMITS = {
+  titleMax: 60,
+  quickInfoMax: 200,
+  descriptionMax: 500,
+  photosMax: 10,
+} as const;
+
+export const PRODUCT_CONDITIONS = ['nuevo', 'como_nuevo', 'bueno', 'regular'] as const;
+export const PRODUCT_CURRENCIES = ['ARS', 'USD'] as const;
+
+export const PRODUCT_MESSAGES = {
+  tituloVacio: 'Por favor ingresa un título o descripción para tu anuncio.',
+  categoriaVacia: 'Por favor selecciona una categoría para tu producto.',
+  precioInvalido: 'Por favor ingresa un precio válido mayor a 0.',
+  tituloLargo: 'El título no puede superar los 60 caracteres.',
+  descripcionLarga: 'La descripción no puede superar los 500 caracteres.',
+  infoLarga: 'La información rápida no puede superar los 200 caracteres.',
+  demasiadasFotos: 'Se permiten hasta 10 fotos.',
+  monedaInvalida: 'La moneda debe ser ARS o USD.',
+  condicionInvalida: 'El estado del producto no es válido.',
+} as const;
+
+export function parsePrecio(texto: string): number {
+  return parseFloat(texto.replace(/[^0-9.]/g, ''));
+}
+
+export const productSchema = z
+  .object({
+    title: z.string(),
+    quickInfo: z.string(),
+    description: z.string(),
+    categoryId: z.number().nullable(),
+    price: z.string(),
+    currency: z.string(),
+    condition: z.string(),
+    photos: z.array(z.string()),
+  })
+  .superRefine((valores, ctx) => {
+    if (!valores.title.trim() && !valores.quickInfo.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['title'], message: PRODUCT_MESSAGES.tituloVacio });
+      return;
+    }
+    if (valores.categoryId === null) {
+      ctx.addIssue({ code: 'custom', path: ['categoryId'], message: PRODUCT_MESSAGES.categoriaVacia });
+      return;
+    }
+    const precio = parsePrecio(valores.price);
+    if (Number.isNaN(precio) || precio <= 0) {
+      ctx.addIssue({ code: 'custom', path: ['price'], message: PRODUCT_MESSAGES.precioInvalido });
+      return;
+    }
+    if (valores.title.length > PRODUCT_LIMITS.titleMax) {
+      ctx.addIssue({ code: 'custom', path: ['title'], message: PRODUCT_MESSAGES.tituloLargo });
+      return;
+    }
+    if (valores.description.length > PRODUCT_LIMITS.descriptionMax) {
+      ctx.addIssue({ code: 'custom', path: ['description'], message: PRODUCT_MESSAGES.descripcionLarga });
+      return;
+    }
+    if (valores.quickInfo.length > PRODUCT_LIMITS.quickInfoMax) {
+      ctx.addIssue({ code: 'custom', path: ['quickInfo'], message: PRODUCT_MESSAGES.infoLarga });
+      return;
+    }
+    if (!(PRODUCT_CURRENCIES as readonly string[]).includes(valores.currency)) {
+      ctx.addIssue({ code: 'custom', path: ['currency'], message: PRODUCT_MESSAGES.monedaInvalida });
+      return;
+    }
+    if (!(PRODUCT_CONDITIONS as readonly string[]).includes(valores.condition)) {
+      ctx.addIssue({ code: 'custom', path: ['condition'], message: PRODUCT_MESSAGES.condicionInvalida });
+      return;
+    }
+    if (valores.photos.length > PRODUCT_LIMITS.photosMax) {
+      ctx.addIssue({ code: 'custom', path: ['photos'], message: PRODUCT_MESSAGES.demasiadasFotos });
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// Carrito y Compra (CartScreen)
+// ---------------------------------------------------------------------------
+
+export const cartValidationSchema = z
+  .object({
+    productId: z.string(),
+    sellerId: z.string(),
+    title: z.string(),
+    price: z.string(),
+    paymentMethod: z.string(),
+  })
+  .superRefine((valores, ctx) => {
+    if (!valores.productId.trim() || !valores.sellerId.trim()) {
+      ctx.addIssue({ code: 'custom', message: 'El ID del producto y del vendedor son requeridos.' });
+      return;
+    }
+    // Si contiene el signo menos explícitamente, o el número parseado es menor a 0
+    const tieneSignoNegativo = valores.price.includes('-');
+    const precio = parsePrecio(valores.price);
+    
+    if (tieneSignoNegativo || Number.isNaN(precio) || precio < 0) {
+      ctx.addIssue({ code: 'custom', path: ['price'], message: 'El precio debe ser un número no negativo.' });
+    }
+  });
