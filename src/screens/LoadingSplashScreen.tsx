@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 
 import { supabase } from '../supabase';
+import { withAuthTimeout } from '../utils/authTimeout';
 
 // Isotipo blanco oficial de Soltapp
 import IsotipoBlanco from '../../assets/svgs/Isotipo blanco 1.svg';
@@ -45,7 +46,7 @@ export default function LoadingSplashScreen() {
     // 2. Comprobar sesión de Supabase (OAuth o sesión persistida)
     const checkSessionAndNavigate = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await withAuthTimeout(supabase.auth.getSession());
         
         setTimeout(() => {
           if (!isMounted) return;
@@ -63,10 +64,14 @@ export default function LoadingSplashScreen() {
             }
           });
         }, 1000);
-      } catch {
+      } catch (reason) {
         setTimeout(() => {
           if (!isMounted) return;
-          router.replace('/login' as any);
+          if (reason instanceof Error && reason.name === 'AuthTimeoutError') {
+            router.replace({ pathname: '/login', params: { authError: 'session-timeout' } });
+          } else {
+            router.replace('/login');
+          }
         }, 1000);
       }
     };

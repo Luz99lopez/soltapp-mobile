@@ -9,6 +9,7 @@ import {
   ProductFilters,
   ProductStatus,
   ProductImageInput,
+  ProductReview,
 } from '../types/database.types';
 
 /**
@@ -368,6 +369,13 @@ export const productService = {
       throw new Error('No tienes autorización para editar esta publicación.');
     }
 
+    if (input.title !== undefined && !input.title.trim()) {
+      throw new Error('El título es obligatorio.');
+    }
+    if (input.price !== undefined && (!Number.isFinite(input.price) || input.price <= 0)) {
+      throw new Error('El precio debe ser mayor a cero.');
+    }
+
     // 2. Construir payload de actualización
     const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString(),
@@ -382,15 +390,21 @@ export const productService = {
     if (input.status !== undefined) updatePayload.status = input.status;
     if (input.location !== undefined) updatePayload.location = input.location?.trim() || null;
 
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('products')
       .update(updatePayload)
       .eq('id', productId)
-      .eq('seller_id', user.id);
+      .eq('seller_id', user.id)
+      .neq('status', 'eliminado')
+      .select('id')
+      .maybeSingle();
 
     if (updateError) {
       console.error(`[productService.updateProduct] Error ID ${productId}:`, updateError.message);
       throw new Error(`Error al actualizar producto: ${updateError.message}`);
+    }
+    if (!updated) {
+      throw new Error('No se pudo modificar la publicación. Verificá su estado y tus permisos.');
     }
 
     // 3. Si se envían nuevas imágenes, reemplazamos la galería
@@ -432,28 +446,18 @@ export const productService = {
    * Cambia el estado de una publicación (ej: 'pausado', 'activo', 'vendido', 'eliminado')
    */
   async updateProductStatus(productId: string, status: ProductStatus): Promise<void> {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      throw new Error('Debes iniciar sesión para cambiar el estado de la publicación.');
-    }
-
-    const { error } = await supabase
-      .from('products')
-      .update({
-        status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', productId)
-      .eq('seller_id', user.id);
-
-    if (error) {
-      console.error(`[productService.updateProductStatus] Error:`, error.message);
-      throw new Error(`Error al cambiar el estado del producto: ${error.message}`);
-    }
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error('Iniciá sesión para cambiar el estado de la publicación.');
+    const { data: existing, error: checkError } = await supabase.from('products')
+      .select('id, seller_id').eq('id', productId).maybeSingle();
+    if (checkError || !existing) throw new Error('Producto no encontrado.');
+    if (existing.seller_id !== user.id) throw new Error('No tienes autorización para modificar esta publicación.');
+    const { data: updated, error } = await supabase.from('products')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', productId).eq('seller_id', user.id).neq('status', 'eliminado')
+      .select('id').maybeSingle();
+    if (error) throw new Error(`Error al cambiar el estado del producto: ${error.message}`);
+    if (!updated) throw new Error('No se pudo modificar la publicación. Verificá su estado y tus permisos.');
   },
 
   /**
@@ -493,12 +497,37 @@ export const productService = {
    * Obtiene todos los productos publicados por un vendedor específico
    */
   async getProductsBySeller(sellerId: string, status?: ProductStatus): Promise<ProductListItem[]> {
-    return (
-      await this.getActiveProducts({
+    const products: ProductListItem[] = [];
+    let count = 0;
+    do {
+      const page = await this.getActiveProducts({
         sellerId,
         status: status || ['activo', 'pausado', 'vendido'],
         limit: 100,
-      })
-    ).products;
+        offset: products.length,
+      });
+      products.push(...page.products);
+      count = page.count;
+      if (!page.products.length) break;
+    } while (products.length < count);
+    return products;
+  },
+
+  async getMyProducts(): Promise<ProductListItem[]> {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) throw new Error('Iniciá sesión para ver tus publicaciones.');
+    return this.getProductsBySeller(user.id);
+  },
+
+  /** Opiniones recibidas por el vendedor; no altera órdenes ni valoraciones. */
+  async getSellerReviews(sellerId: string): Promise<ProductReview[]> {
+    const { data, error } = await supabase
+      .from('order_reviews')
+      .select('id, reviewer_id, rating, comment, created_at')
+      .eq('reviewed_user_id', sellerId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) throw new Error('No se pudieron cargar las opiniones de compradores.');
+    return data || [];
   },
 };

@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { meetupOrderService, InboxConversationItem } from '../services/meetupOrderService';
 import { accountService, SoltappUser } from '../services/accountService';
 import { SoltappNotification } from '../types/order.types';
+import ChatInboxList from './ChatInboxList';
 
 export interface ConversationItem {
   id: string;
@@ -21,6 +22,11 @@ export interface ConversationItem {
   productTitle: string;
   productPrice: string;
   date: string;
+  conversationId?: string;
+  productId?: string;
+  buyerId?: string;
+  sellerId?: string;
+  imageUri?: string;
 }
 
 interface InboxViewProps {
@@ -37,6 +43,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
   const [currentUser, setCurrentUser] = useState<SoltappUser | null>(null);
   const [notifications, setNotifications] = useState<SoltappNotification[]>([]);
   const [conversations, setConversations] = useState<InboxConversationItem[]>([]);
+  const [realChatCount, setRealChatCount] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -49,7 +56,8 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
           const notifs = await meetupOrderService.getNotifications(user.id);
           const convs = await meetupOrderService.getInboxConversations(user.id);
           setNotifications(notifs);
-          setConversations(convs);
+          // Mantener los tratos del grupo; el chat de demostración se reemplaza por conversaciones reales.
+          setConversations(convs.filter(conversation => conversation.isMeetupSale));
         }
       } catch (e) {
         console.warn('[InboxView.loadInbox] Error:', e);
@@ -146,7 +154,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
             >
               Mensajes
             </Text>
-            {conversations.length > 0 && (
+            {conversations.length + realChatCount > 0 && (
               <View
                 style={[
                   styles.badge,
@@ -155,7 +163,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
                     : { backgroundColor: '#9CA3AF' },
                 ]}
               >
-                <Text style={styles.badgeText}>{conversations.length}</Text>
+                <Text style={styles.badgeText}>{conversations.length + realChatCount}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -200,6 +208,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
       {/* 3. Contenido según pestaña */}
       {subTab === 'messages' ? (
         <View style={styles.listContainer}>
+          <ChatInboxList onOpen={onOpenConversation} onCountChange={setRealChatCount} />
           {conversations.length > 0 ? (
             conversations.map((item) => {
               const isSale = item.role === 'seller';
@@ -287,9 +296,9 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons name="chatbubble-ellipses-outline" size={40} color="#D1D5DB" style={{ marginBottom: 10 }} />
-              <Text style={styles.emptyText}>No tienes mensajes ni tratos activos</Text>
+              <Text style={styles.emptyText}>No tienes tratos de compra o venta activos</Text>
               <Text style={styles.emptySubtext}>
-                Tus conversaciones con vendedores y compradores cara a cara aparecerán aquí.
+                Tus tratos de compra y venta cara a cara aparecerán aquí.
               </Text>
             </View>
           )}

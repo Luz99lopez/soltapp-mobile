@@ -5,20 +5,21 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useChatThread } from '../hooks/useChatThread';
+import { formatProductPrice } from '../utils/productPresentation';
 
 // Iconos SVG oficiales de assets/svgs
 import FlechaVolverIcon from '../../assets/svgs/Flecha volver.svg';
-import EstrellaIcon from '../../assets/svgs/Estrella.svg';
 import AvatarIcon from '../../assets/svgs/Avatar.svg';
 
 export interface ChatMessage {
@@ -29,66 +30,34 @@ export interface ChatMessage {
   status?: 'sent' | 'delivered' | 'read';
 }
 
-const STORAGE_KEY = '@soltapp_chat_messages_alex_silva';
-
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    productId?: string;
+    conversationId?: string;
+    sellerId?: string;
+    buyerId?: string;
+    imageUri?: string;
     productTitle?: string;
     productPrice?: string;
     sellerName?: string;
   }>();
 
-  const productTitle = params.productTitle || 'Separadores Braid 5×100';
-  const productPrice = params.productPrice || '$ 50.000';
-  const sellerName = params.sellerName || 'Alex Silva';
+  const thread = useChatThread({ conversationId: params.conversationId, productId: params.productId });
+  const productTitle = thread.context ? thread.context.product?.title || 'Publicación no disponible' : params.productTitle || 'Conversación';
+  const productPrice = thread.context?.product ? formatProductPrice(thread.context.product.price, thread.context.product.currency) : '';
+  const sellerName = thread.context?.counterpartName || 'Participante';
+  const images = thread.context?.product?.images || [];
+  const cover = (images.find(image => image.is_cover) || images[0])?.image_url || params.imageUri;
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
-  // Mensajes iniciales exactos a la imagen de referencia
-  const initialMessages: ChatMessage[] = [
-    {
-      id: 'm1',
-      sender: 'user',
-      text: 'Hola buenas tardes! , Me interesa el producto , podemos coordinar para verlo ?',
-      time: '15:48',
-      status: 'read',
-    },
-    {
-      id: 'm2',
-      sender: 'other',
-      text: 'Hola , Obvio soy de Pilar',
-      time: '15:48',
-    },
-    {
-      id: 'm3',
-      sender: 'other',
-      text: 'En la plaza te parece?',
-      time: '15:48',
-    },
-  ];
-
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const messages = thread.messages.map(message => ({ id: message.id, sender: message.sender_id === thread.context?.userId ? 'user' : 'other', text: message.body, time: new Date(message.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) }));
   const [inputText, setInputText] = useState('');
   const [isTypingBarVisible, setIsTypingBarVisible] = useState(false);
-  const [isCounterpartTyping, setIsCounterpartTyping] = useState(false);
-
-  // Cargar historial guardado o iniciar con los mensajes por defecto
-  useEffect(() => {
-    (async () => {
-      try {
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessages(parsed);
-          }
-        }
-      } catch {
-        // En caso de error, mantener mensajes iniciales
-      }
-    })();
-  }, []);
+  useEffect(() => { setInputText(''); setIsTypingBarVisible(false); }, [thread.context?.userId]);
+  const lastMessageId = messages[messages.length - 1]?.id;
+  useEffect(() => { scrollViewRef.current?.scrollToEnd({ animated: false }); }, [lastMessageId]);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -98,79 +67,22 @@ export default function ChatScreen() {
     }
   };
 
-  const getCurrentTime = () => {
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${minutes}`;
-  };
-
   const sendMessage = async () => {
-    const trimmed = inputText.trim();
-    if (!trimmed) return;
-
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: trimmed,
-      time: getCurrentTime(),
-      status: 'read',
-    };
-
-    const updated = [...messages, newMessage];
-    setMessages(updated);
-    setInputText('');
-
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch {
-      // Ignorar error de almacenamiento
-    }
-
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    // Simular respuesta automática del vendedor
-    setIsCounterpartTyping(true);
-    setTimeout(async () => {
-      setIsCounterpartTyping(false);
-      const automatedReplies = [
-        '¡Dale, dale! Ahí nos vemos entonces.',
-        'Perfecto, a esa hora me queda bien.',
-        '¿Llegas bien o te paso la ubicación exacta?',
-        '¡Genial! Ya lo separo para vos.',
-      ];
-      const randomReply = automatedReplies[Math.floor(Math.random() * automatedReplies.length)];
-
-      const sellerMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: 'other',
-        text: randomReply,
-        time: getCurrentTime(),
-      };
-
-      setMessages((prev) => {
-        const nextList = [...prev, sellerMessage];
-        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextList)).catch(() => {});
-        return nextList;
-      });
-
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }, 1800);
+    if (!inputText.trim() || !thread.context || thread.loading || thread.sending) return;
+    if (await thread.send(inputText)) setInputText('');
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       {/* 1. Header con Producto y Retroceso */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={handleBack}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
           activeOpacity={0.7}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
@@ -179,12 +91,7 @@ export default function ChatScreen() {
 
         {/* Miniatura cuadrada redondeada del producto */}
         <View style={styles.productThumb}>
-          <Image
-            source={{
-              uri: 'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=200&q=80',
-            }}
-            style={styles.productThumbImg}
-          />
+          {cover ? <Image source={{ uri: cover }} style={styles.productThumbImg} /> : <Ionicons name="image-outline" size={24} color="#9098B1" />}
         </View>
 
         {/* Datos del producto: Precio y Título */}
@@ -205,7 +112,6 @@ export default function ChatScreen() {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
         >
           {/* 2. Cabecera del Perfil del Vendedor */}
           <View style={styles.sellerContainer}>
@@ -215,26 +121,23 @@ export default function ChatScreen() {
 
             <Text style={styles.sellerName}>{sellerName}</Text>
 
-            <View style={styles.statsRow}>
-              <View style={styles.statColumn}>
-                <View style={styles.ratingRow}>
-                  <EstrellaIcon width={16} height={16} fill="#000000" />
-                  <Text style={styles.ratingValue}>4,8</Text>
-                </View>
-                <Text style={styles.ratingCount}>124 valoraciones</Text>
-              </View>
-
-              <View style={styles.statColumn}>
-                <Text style={styles.responseLabel}>Responde en</Text>
-                <Text style={styles.responseValue}>24 horas</Text>
-              </View>
-            </View>
+            {thread.offline ? <Text style={styles.responseLabel} role="status" accessibilityLiveRegion="polite">Sin conexión con el chat. Tu borrador se conserva.</Text> : thread.context && <Text style={styles.responseLabel}>{thread.live ? 'Conectado al chat' : 'Los mensajes se sincronizan automáticamente'}</Text>}
           </View>
 
           {/* 3. Divisor de Fecha */}
           <View style={styles.dateDividerContainer}>
-            <Text style={styles.dateDividerText}>10 dic 2025</Text>
+            <Text style={styles.dateDividerText}>{thread.messages[0] ? new Date(thread.messages[0].created_at).toLocaleDateString('es-AR') : 'Conversación sobre este artículo'}</Text>
           </View>
+          {thread.loading && <View style={styles.statusBox} role="status" accessibilityLiveRegion="polite"><ActivityIndicator color="#0D9488" /><Text>Cargando conversación...</Text></View>}
+          {thread.sending && <Text style={styles.emptyText} role="status" accessibilityLiveRegion="polite">Enviando mensaje...</Text>}
+          {!!(thread.error || thread.syncError) && <View style={styles.statusBox}>
+            <Text accessibilityRole="alert">{thread.error || thread.syncError}</Text>
+            {!thread.context && <TouchableOpacity accessibilityRole="button" onPress={thread.reload}><Text style={styles.retryText}>Reintentar</Text></TouchableOpacity>}
+            {!!thread.syncError && !!thread.context && <TouchableOpacity accessibilityRole="button" onPress={thread.refresh}><Text style={styles.retryText}>Actualizar conversación</Text></TouchableOpacity>}
+            {thread.needsLogin && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/login')}><Text style={styles.retryText}>Iniciar sesión</Text></TouchableOpacity>}
+          </View>}
+          {!thread.loading && thread.context && !messages.length && <Text style={styles.emptyText}>Todavía no hay mensajes. Podés iniciar la conversación.</Text>}
+          {thread.hasOlder && <TouchableOpacity accessibilityRole="button" disabled={thread.loadingOlder} onPress={thread.loadOlder} style={styles.statusBox}><Text>{thread.loadingOlder ? 'Cargando...' : 'Cargar mensajes anteriores'}</Text></TouchableOpacity>}
 
           {/* 4. Conversación / Burbujas de Chat */}
           <View style={styles.messagesList}>
@@ -261,7 +164,8 @@ export default function ChatScreen() {
                       <Text style={styles.timeText}>{item.time}</Text>
                       {isUser && (
                         <Ionicons
-                          name="checkmark-done"
+                          name="checkmark"
+                          accessibilityLabel="Guardado"
                           size={15}
                           color="#111827"
                           style={styles.checkIcon}
@@ -273,13 +177,6 @@ export default function ChatScreen() {
               );
             })}
 
-            {isCounterpartTyping && (
-              <View style={[styles.messageBubbleWrapper, styles.otherBubbleWrapper]}>
-                <View style={[styles.messageBubble, styles.otherBubble, styles.typingBubble]}>
-                  <Text style={styles.typingText}>Alex Silva está escribiendo...</Text>
-                </View>
-              </View>
-            )}
           </View>
 
           {/* 5. Botón Inferior "Chatea" */}
@@ -287,8 +184,11 @@ export default function ChatScreen() {
             <View style={styles.actionButtonContainer}>
               <TouchableOpacity
                 style={styles.chateaButton}
+                accessibilityRole="button"
+                accessibilityLabel="Chatea"
                 activeOpacity={0.8}
                 onPress={() => setIsTypingBarVisible(true)}
+                disabled={!thread.context || thread.loading}
               >
                 <Text style={styles.chateaButtonText}>Chatea</Text>
               </TouchableOpacity>
@@ -311,8 +211,21 @@ export default function ChatScreen() {
               placeholder="Escribe un mensaje..."
               placeholderTextColor="#9CA3AF"
               value={inputText}
+              accessibilityLabel="Mensaje"
+              maxLength={4000}
+              editable={!thread.sending && !!thread.context}
               onChangeText={setInputText}
               multiline
+              returnKeyType="send"
+              submitBehavior={Platform.OS === 'web' ? undefined : 'submit'}
+              onSubmitEditing={sendMessage}
+              onKeyPress={Platform.OS === 'web' ? event => {
+                const key = event.nativeEvent as typeof event.nativeEvent & { shiftKey?: boolean; isComposing?: boolean; keyCode?: number };
+                if (key.key === 'Enter' && !key.shiftKey && !key.isComposing && key.keyCode !== 229) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              } : undefined}
               autoFocus
             />
             <TouchableOpacity
@@ -321,14 +234,16 @@ export default function ChatScreen() {
                 !inputText.trim() && styles.sendButtonDisabled,
               ]}
               onPress={sendMessage}
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || thread.sending || !thread.context || thread.loading}
+              accessibilityRole="button"
+              accessibilityLabel={thread.sending ? 'Enviando mensaje' : 'Enviar mensaje'}
               activeOpacity={0.8}
             >
-              <Ionicons
+              {thread.sending ? <ActivityIndicator color="#0D9488" /> : <Ionicons
                 name="send"
                 size={18}
                 color={inputText.trim() ? '#111827' : '#9CA3AF'}
-              />
+              />}
             </TouchableOpacity>
           </View>
         )}
@@ -341,6 +256,9 @@ const CHAT_USER_BG = '#B4F4EB'; // Color solicitado para la burbuja de chat
 const CHAT_OTHER_BG = '#D9D9D9'; // Gris idéntico al mockup
 
 const styles = StyleSheet.create({
+  statusBox: { padding: 16, alignItems: 'center', gap: 12 },
+  retryText: { color: '#0D9488', fontWeight: '700', padding: 8 },
+  emptyText: { padding: 20, textAlign: 'center', color: '#64748B' },
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',

@@ -1,34 +1,59 @@
 import { Platform } from 'react-native';
-import { makeRedirectUri } from 'expo-auth-session';
+import { createURL } from 'expo-linking';
+import Constants from 'expo-constants';
+import { getExpoGoProjectConfig, isRunningInExpoGo } from 'expo';
 
 /**
  * Obtiene dinámicamente la URL de redirección (callback) adecuada según el entorno:
- * - Producción Web / Dominio Personalizado (auth.soltapp.com.ar o EXPO_PUBLIC_AUTH_DOMAIN)
- * - Desarrollo Web (localhost:8081)
+ * - Web: mismo origen y puerto que inició el login (la sesión es por origen).
  * - Aplicación Móvil Nativa (soltapp://home o soltapp://auth/callback)
  * - Entorno de desarrollo Expo Go
  */
 export function getAuthRedirectUri(path: string = 'home'): string {
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined') {
-      const hostname = window.location.hostname;
-      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-      const isLocalIp = /^10\./.test(hostname) || /^192\.168\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) || hostname.endsWith('.local');
-
-      // Si estamos en entorno de desarrollo local (localhost o IP de red local)
-      if (isLocalhost || isLocalIp) {
-        return `${window.location.origin}/${path}`;
-      }
-
-      // En producción web o dominio personalizado
-      const customDomain = process.env.EXPO_PUBLIC_AUTH_DOMAIN || 'auth.soltapp.com.ar';
-      return `https://${customDomain}/${path}`;
+      return `${window.location.origin}/${path.replace(/^\/+/, '')}`;
     }
   }
 
-  // Entorno Móvil (Expo Go / Standalone con scheme 'soltapp')
-  return makeRedirectUri({
+  // El cliente observado informa Constants como app nativa aun dentro de Expo Go.
+  // Detectar el módulo ExpoGo y conservar el host/puerto reales del proyecto.
+  if (Platform.OS !== 'web' && isRunningInExpoGo()) {
+    const host = getExpoGoProjectConfig()?.debuggerHost || Constants.expoConfig?.hostUri;
+    if (!host) throw new Error('No se pudo determinar el servidor de Expo Go. Volvé a abrir el proyecto desde su QR.');
+    const server = new URL(host.includes('://') ? host : `http://${host}`);
+    if (!['http:', 'https:'].includes(server.protocol) || server.username || server.password) {
+      throw new Error('El servidor de Expo Go no tiene una dirección válida. Volvé a abrir el proyecto desde su QR.');
+    }
+    return `${server.protocol === 'https:' ? 'exps' : 'exp'}://${server.host}/--/${path.replace(/^\/+/, '')}`;
+  }
+
+  // Equivale a makeRedirectUri({ scheme, path }) en los builds nativos. Usar Linking
+  // evita importar PKCE/expo-crypto para una operación que solo construye una URI.
+  return createURL(path, {
     scheme: 'soltapp',
-    path,
   });
+}
+
+/** No expone tokens ni códigos OAuth en mensajes o logs. */
+export function getAuthCallbackError(url: string): string | null {
+  const parsed = new URL(url);
+  const query = parsed.searchParams;
+  const fragment = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+  const code = query.get('error_code') || fragment.get('error_code') || query.get('error') || fragment.get('error');
+  if (!code && !query.get('error_description') && !fragment.get('error_description')) return null;
+  if (code === 'access_denied') return 'El inicio de sesión fue cancelado o rechazado por el proveedor.';
+  return 'El proveedor no pudo completar el inicio de sesión. Volvé a intentarlo; si persiste, revisá las URLs de retorno autorizadas en Supabase.';
+}
+
+/** Acción explícita del usuario: elimina solo la sesión de este proyecto en este origen. */
+export function resetWebAuthAccess(projectUrl: string) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  const prefix = `sb-${new URL(projectUrl).hostname.split('.')[0]}-auth-token`;
+  const keys = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index));
+  keys.forEach(key => { if (key === prefix || key?.startsWith(prefix + '-')) window.localStorage.removeItem(key); });
+  const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(prefix) : null;
+  channel?.postMessage({ event: 'SIGNED_OUT', session: null });
+  channel?.close();
+  window.location.replace(`${window.location.origin}/login`);
 }

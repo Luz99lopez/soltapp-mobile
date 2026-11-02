@@ -76,6 +76,17 @@ export interface ProductDetail extends Product {
   category: Category | null;
   images: ProductImage[];
   seller: UserProfile | null;
+  // Atributos opcionales: solo se muestran si el backend los devuelve.
+  color?: string | null;
+  brand?: string | null;
+}
+
+export interface ProductReview {
+  id: string;
+  reviewer_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
 }
 
 /**

@@ -167,7 +167,7 @@ export default function ResetPasswordScreen() {
   if (checkingSession) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <StatusBar barStyle="dark-content" />
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={PRIMARY_COLOR} />
           <Text style={styles.loadingText}>Verificando enlace de seguridad...</Text>
@@ -178,7 +178,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       {/* Botón superior de retroceso / salida */}
       <View style={styles.headerBar}>

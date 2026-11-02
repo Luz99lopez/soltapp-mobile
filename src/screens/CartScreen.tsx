@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,10 +13,13 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { meetupOrderService } from '../services/meetupOrderService';
 import { supabase } from '../supabase';
 import { ActivityIndicator } from 'react-native';
+import { productService } from '../services/productService';
+import type { ProductDetail } from '../types/database.types';
+import { CONDITION_LABELS, formatProductPrice } from '../utils/productPresentation';
 
 // Colores oficiales de Soltapp
 const PRIMARY_TEAL = '#3BD7C2';
@@ -38,29 +41,52 @@ export default function CartScreen() {
     imageUri?: string;
   }>();
 
-  // Datos dinámicos con fallback exacto a la maqueta de Figma
-  const title = params.title || 'Zelda Breath of the Wild';
-  const subtitle = params.subtitle || '(Switch)';
-  const condition = params.condition || 'Como nuevo';
-  const price = params.price || '$25.000';
-  const sellerName = params.sellerName || 'Carlos M.';
-  const sellerAvatar = params.sellerAvatar || null;
-  const imageUri = params.imageUri || null;
+  const [product, setProduct] = useState<ProductDetail | null>(null);
+  const [productLoading, setProductLoading] = useState(!!params.productId);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [buyerId, setBuyerId] = useState('guest');
+  const purchasePending = useRef(false);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setPurchaseError(null);
+    setProduct(null);
+    if (!params.productId) { setProductLoading(false); return; }
+    setProductLoading(true);
+    productService.getProductById(params.productId).then(data => {
+      if (!data || data.status !== 'activo') throw new Error('El producto ya no está disponible.');
+      if (active) setProduct(data);
+    }).catch(err => { if (active) setPurchaseError(err.message || 'No se pudo cargar el producto.'); })
+      .finally(() => { if (active) setProductLoading(false); });
+    return () => { active = false; };
+  }, [params.productId]));
+
+  // Para publicaciones reales, los datos se leen por ID, sin confiar en el precio de la URL.
+  const title = product?.title || params.title || 'Zelda Breath of the Wild';
+  const subtitle = params.productId ? '' : params.subtitle || '(Switch)';
+  const condition = product ? CONDITION_LABELS[product.condition] : params.condition || 'Como nuevo';
+  const price = product ? formatProductPrice(product.price, product.currency) : params.price || '$25.000';
+  const sellerName = product ? product.seller?.full_name || product.seller?.username || 'Vendedor' : params.sellerName || 'Carlos M.';
+  const sellerAvatar = product ? product.seller?.avatar_url : params.sellerAvatar || null;
+  const imageUri = product ? (product.images.find(img => img.is_cover) || product.images[0])?.image_url : params.imageUri || null;
 
   // Estado del método de pago (por defecto: Pago seguro por soltapp)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
-  const [createdOrderId, setCreatedOrderId] = useState<string>('meetup-demo-1');
+  const [createdOrderId, setCreatedOrderId] = useState<string>('');
 
   // Cálculos de resumen
-  const subtotalText = price.startsWith('$') ? price : `$${price}`;
+  const subtotalText = price;
   const totalText = subtotalText;
 
   const handleConfirmPurchase = async () => {
+    if (purchasePending.current || (params.productId && !product)) return;
+    purchasePending.current = true;
     try {
       setIsCreatingOrder(true);
+      setPurchaseError(null);
       const { data: authData } = await supabase.auth.getUser();
+      setBuyerId(authData.user?.id || 'guest');
       const currentBuyerName =
         authData?.user?.user_metadata?.full_name ||
         authData?.user?.user_metadata?.name ||
@@ -68,24 +94,27 @@ export default function CartScreen() {
 
       const newOrder = await meetupOrderService.createMeetupOrder(
         params.productId,
-        params.sellerId,
+        product?.seller_id || params.sellerId,
         {
           title,
           price,
           sellerName,
           buyerName: currentBuyerName,
           imageUri: imageUri || '',
-        }
+        },
+        { requireRemote: !!params.productId }
       );
       if (newOrder?.id) {
         setCreatedOrderId(newOrder.id);
+        setShowConfirmModal(true);
+      } else {
+        throw new Error('No se recibió una orden válida.');
       }
     } catch (e) {
-      console.log('[CartScreen] Error creando orden, usando fallback demo:', e);
-      setCreatedOrderId('order-' + Date.now().toString(36));
+      setPurchaseError(e instanceof Error ? e.message : 'No se pudo confirmar la compra.');
     } finally {
+      purchasePending.current = false;
       setIsCreatingOrder(false);
-      setShowConfirmModal(true);
     }
   };
 
@@ -99,7 +128,7 @@ export default function CartScreen() {
         title,
         price,
         sellerName,
-        sellerId: params.sellerId || '',
+        sellerId: product?.seller_id || params.sellerId || '',
         imageUri: imageUri || '',
       },
     } as any);
@@ -110,6 +139,10 @@ export default function CartScreen() {
     router.push({
       pathname: '/chat',
       params: {
+        productId: params.productId || '',
+        sellerId: product?.seller_id || params.sellerId || '',
+        buyerId,
+        imageUri: imageUri || '',
         productTitle: title,
         productPrice: price,
         sellerName: sellerName,
@@ -121,6 +154,13 @@ export default function CartScreen() {
     setShowConfirmModal(false);
     router.push('/home' as any);
   };
+
+  if (params.productId && !product) {
+    return <SafeAreaView style={styles.safeArea}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.canGoBack() ? router.back() : router.replace('/home')}><Text>Volver</Text></TouchableOpacity>
+      {productLoading ? <View role="status" accessibilityLiveRegion="polite" style={{ padding: 24, gap: 12, alignItems: 'center' }}><ActivityIndicator color={PRIMARY_TEAL} /><Text>Cargando datos de la compra...</Text></View> : <Text accessibilityRole="alert" style={{ padding: 24, color: '#B91C1C' }}>{purchaseError || 'Producto no disponible.'}</Text>}
+    </SafeAreaView>;
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -255,6 +295,7 @@ export default function CartScreen() {
 
         {/* 6. Botón CTA Confirmar trato en persona */}
         <View style={styles.ctaContainer}>
+          {!!purchaseError && <Text accessibilityRole="alert" style={{ color: '#B91C1C', marginBottom: 12 }}>{purchaseError}</Text>}
           <TouchableOpacity
             style={styles.confirmButton}
             activeOpacity={0.85}

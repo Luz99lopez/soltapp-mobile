@@ -1,25 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Image,
-  Dimensions,
   ActivityIndicator,
   StatusBar,
-  Share,
-  Alert,
   Platform,
 } from 'react-native';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { productService, ProductDetail, ProductListItem } from '../services';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { productService } from '../services/productService';
+import type { ProductDetail, ProductListItem, ProductReview } from '../types/database.types';
+import { supabase } from '../supabase';
+import ProductDialog from '../components/ProductDialog';
+import { CONDITION_LABELS, STATUS_LABELS, formatProductPrice } from '../utils/productPresentation';
 
 // SVGs oficiales
-import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
 import BuscarIcon from '../../assets/svgs/Buscar.svg';
 import VerTodoIcon from '../../assets/svgs/Ver todo.svg';
 import EstrellaIcon from '../../assets/svgs/Estrella.svg';
@@ -28,59 +28,6 @@ import CorazonIcon from '../../assets/svgs/Corazón.svg';
 import MasIcon from '../../assets/svgs/Más.svg';
 import MailIcon from '../../assets/svgs/mail.svg';
 import AvatarIcon from '../../assets/svgs/Avatar.svg';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const DEFAULT_FALLBACK_IMG = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800&q=80';
-
-// Mock de valoraciones de vendedor para el diseño
-const MOCK_SELLER_REVIEWS = [
-  {
-    id: 'r1',
-    author: 'Marcelo H.',
-    date: 'Hace 1 año',
-    comment: 'Todo OK',
-    stars: 5,
-  },
-  {
-    id: 'r2',
-    author: 'Edgar Wittkous',
-    date: 'Hace 1 año',
-    comment: 'Todo correcto rápido, fácil y puntual',
-    stars: 5,
-  },
-  {
-    id: 'r3',
-    author: 'David',
-    date: 'Hace 1 año',
-    comment: 'Todo perfecto!!',
-    stars: 5,
-  },
-];
-
-// Mock de productos relacionados
-const MOCK_RELATED_PRODUCTS = [
-  {
-    id: 'rel1',
-    title: 'Zapatillas Nike Air Max 270',
-    condition: 'Como nuevo · Talle 41',
-    price: '$ 180.000',
-    image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500&q=80',
-  },
-  {
-    id: 'rel2',
-    title: 'Zapatillas Nike React Vision',
-    condition: 'Nuevo · Talle 42',
-    price: '$ 195.000',
-    image: 'https://images.unsplash.com/photo-1551107696-a4b0c5a0d9a2?w=500&q=80',
-  },
-  {
-    id: 'rel3',
-    title: 'Zapatillas Nike Air Force 1',
-    condition: 'Excelente · Blanco',
-    price: '$ 165.000',
-    image: 'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=500&q=80',
-  },
-];
 
 export default function ProductDetailScreen() {
   const router = useRouter();
@@ -94,95 +41,114 @@ export default function ProductDetailScreen() {
   // Estados de UI
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
-  const [favoriteCount, setFavoriteCount] = useState<number>(2);
   const [descExpanded, setDescExpanded] = useState<boolean>(true);
   const [detailsExpanded, setDetailsExpanded] = useState<boolean>(true);
   const [imageError, setImageError] = useState<boolean>(false);
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [reviewsError, setReviewsError] = useState<string | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState<ProductListItem[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [relatedError, setRelatedError] = useState<string | null>(null);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deletionPending = useRef(false);
+  const loadedProductId = useRef<string | null>(null);
+  const isOwner = !!viewerId && viewerId === product?.seller_id;
 
-  // Carga del producto desde Supabase
   useEffect(() => {
-    if (!productId) {
-      setError('No se especificó un ID de producto válido.');
-      setLoading(false);
-      return;
-    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setViewerId(session?.user.id || null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
+  // Recargar al volver de editar; descartar respuestas de una pantalla anterior.
+  useFocusEffect(useCallback(() => {
+    let active = true;
     setLoading(true);
-    setImageError(false);
-    productService
-      .getProductById(productId)
-      .then((data) => {
-        if (data) {
-          setProduct(data);
-        } else {
-          setError('El producto no fue encontrado o ya no está disponible.');
-        }
-      })
-      .catch((err) => {
-        console.error('[ProductDetailScreen] Error:', err);
-        setError('Error al cargar la información del producto.');
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [productId]);
+    setError(null);
+    // Mantener el artículo al volver; validar datos nuevos sin vaciar toda la pantalla.
+    if (loadedProductId.current !== productId) {
+      setProduct(null);
+      setCurrentImageIndex(0);
+      setImageError(false);
+      setReviews([]);
+      setRelatedProducts([]);
+    }
+    setReviewsError(null);
+    setRelatedError(null);
+    (async () => {
+      if (!productId || Array.isArray(productId)) throw new Error('No se especificó un ID de producto válido.');
+      const [data, auth] = await Promise.all([
+        productService.getProductById(productId), supabase.auth.getUser(),
+      ]);
+      if (!active) return;
+      if (!data || data.status === 'eliminado') {
+        setProduct(null);
+        loadedProductId.current = null;
+        throw new Error('El producto no fue encontrado o ya no está disponible.');
+      }
+      loadedProductId.current = data.id;
+      setViewerId(auth.data.user?.id || null);
+      setProduct(data);
+      setLoading(false);
+      setReviewsLoading(true);
+      setRelatedLoading(true);
+      const [opinions, related] = await Promise.allSettled([
+        productService.getSellerReviews(data.seller_id),
+        productService.getActiveProducts({ categoryId: data.category_id, limit: 7 }),
+      ]);
+      if (!active) return;
+      if (opinions.status === 'fulfilled') setReviews(opinions.value);
+      else setReviewsError('No se pudieron cargar las opiniones de compradores.');
+      if (related.status === 'fulfilled') setRelatedProducts(related.value.products.filter(item => item.id !== data.id));
+      else setRelatedError('No se pudieron cargar los productos relacionados.');
+      setReviewsLoading(false);
+      setRelatedLoading(false);
+    })().catch(err => { if (active) setError(err.message || 'Error al cargar el producto.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [productId]));
 
-  // Formato de precio
-  const formattedPrice = product
-    ? product.currency?.toUpperCase() === 'USD'
-      ? `USD ${Number(product.price).toLocaleString('es-AR')}`
-      : `$ ${Number(product.price).toLocaleString('es-AR')}`
-    : '$ 0';
+  useEffect(() => { setImageError(false); }, [currentImageIndex]);
+  useEffect(() => { setIsFavorite(false); }, [productId]);
 
-  // Fallback contextual de imagen según título o categoría
-  const getContextualFallback = (title: string = '', categoryName: string = '') => {
-    const text = `${title} ${categoryName}`.toLowerCase();
-    if (text.includes('bici') || text.includes('cannondale') || text.includes('mountain') || text.includes('r29')) {
-      return 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=800&q=80';
+  const back = () => router.canGoBack() ? router.back() : router.replace('/home');
+  const removeProduct = async () => {
+    if (!product || !isOwner || deletionPending.current) return;
+    deletionPending.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await productService.deleteProduct(product.id);
+      setShowDelete(false);
+      setProduct(null);
+      back();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar la publicación.');
+    } finally {
+      deletionPending.current = false;
+      setDeleting(false);
     }
-    if (text.includes('figura') || text.includes('twitch') || text.includes('league') || text.includes('lol') || text.includes('juego') || text.includes('anime')) {
-      return 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&q=80';
-    }
-    if (text.includes('iphone') || text.includes('celular') || text.includes('telefono') || text.includes('apple') || text.includes('samsung')) {
-      return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&q=80';
-    }
-    if (text.includes('auto') || text.includes('volkswagen') || text.includes('gol') || text.includes('vehiculo') || text.includes('coche')) {
-      return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800&q=80';
-    }
-    if (text.includes('zapatilla') || text.includes('nike') || text.includes('ropa') || text.includes('moda')) {
-      return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80';
-    }
-    return DEFAULT_FALLBACK_IMG;
   };
 
-  // Lista de imágenes con validación de URL y descarte de blobs temporales rotos
-  const rawImages = product?.images && product.images.length > 0
-    ? product.images.map((img) => img.image_url)
-    : [DEFAULT_FALLBACK_IMG];
+  // Formato de precio
+  const formattedPrice = product ? formatProductPrice(product.price, product.currency) : '';
 
-  const imagesList = rawImages.map((url) => {
-    if (
-      !url ||
-      typeof url !== 'string' ||
-      url.startsWith('blob:') ||
-      (Platform.OS === 'web' && url.startsWith('file:///'))
-    ) {
-      return getContextualFallback(product?.title, product?.category?.name);
-    }
-    return url;
-  });
+  // Lista de imágenes con validación de URL y descarte de blobs temporales rotos
+  const imagesList = [...(product?.images || [])]
+    .sort((a, b) => Number(b.is_cover) - Number(a.is_cover) || a.position - b.position)
+    .map(img => img.image_url)
+    .filter(url => !!url && !url.startsWith('blob:') && !(Platform.OS === 'web' && url.startsWith('file:')));
 
   const totalImages = imagesList.length;
 
   // Toggle de Favorito
   const toggleFavorite = () => {
-    if (isFavorite) {
-      setIsFavorite(false);
-      setFavoriteCount((prev) => Math.max(0, prev - 1));
-    } else {
-      setIsFavorite(true);
-      setFavoriteCount((prev) => prev + 1);
-    }
+    setIsFavorite(value => !value);
   };
 
   // Navegación siguiente / anterior de fotos
@@ -196,11 +162,15 @@ export default function ProductDetailScreen() {
 
   // Navegar al chat con el vendedor
   const handleOpenChat = () => {
-    if (!product) return;
+    if (!product || isOwner) return;
     const seller = product.seller?.full_name || product.seller?.username || 'Vendedor';
     router.push({
       pathname: '/chat',
       params: {
+        productId: product.id,
+        sellerId: product.seller_id,
+        buyerId: viewerId || 'guest',
+        imageUri: imagesList[0] || '',
         productTitle: product.title,
         productPrice: formattedPrice,
         sellerName: seller,
@@ -208,19 +178,17 @@ export default function ProductDetailScreen() {
     } as any);
   };
 
-  const sellerName = product?.seller?.full_name || product?.seller?.username || 'Fer N.';
+  const sellerName = product?.seller?.full_name || product?.seller?.username || 'Vendedor';
   const sellerInitial = sellerName.charAt(0).toUpperCase();
   const sellerAvatar = product?.seller?.avatar_url;
 
-  const conditionLabel = product?.condition
-    ? product.condition === 'como_nuevo'
-      ? 'Como nuevo'
-      : product.condition.charAt(0).toUpperCase() + product.condition.slice(1)
-    : 'Como nuevo';
+  const conditionLabel = product ? CONDITION_LABELS[product.condition] || product.condition : '';
+  const reviewAverage = reviews.length ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toLocaleString('es-AR', { maximumFractionDigits: 1 }) : null;
 
   // Navegar al carrito / pantalla de compras
   const handleBuyProduct = () => {
-    if (!product) return;
+    if (!product || isOwner || product.status !== 'activo') return;
+    if (!viewerId) { router.push('/login'); return; }
     router.push({
       pathname: '/cart',
       params: {
@@ -237,21 +205,21 @@ export default function ProductDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView testID="product-detail-screen" style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
 
       {/* 1. Header Navbar Superior Exacto a Soltapp */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={back}
           activeOpacity={0.7}
         >
           <Ionicons name="chevron-back" size={24} color="#1F232E" />
         </TouchableOpacity>
 
         <View style={styles.logoWrapper}>
-          <IsotipoConFondo width={36} height={36} />
+          <Image source={require('../../assets/images/product-detail-mark.png')} style={{ width: 36, height: 23.4 }} resizeMode="contain" accessibilityLabel="Soltapp" />
         </View>
 
         <View style={styles.searchBar}>
@@ -272,33 +240,33 @@ export default function ProductDetailScreen() {
       </View>
 
       {/* Contenido Principal */}
-      {loading ? (
+      {loading && !product ? (
         <View style={styles.centerWrapper}>
           <ActivityIndicator size="large" color="#1DE9B6" />
           <Text style={styles.loadingText}>Cargando publicación...</Text>
         </View>
-      ) : error || !product ? (
+      ) : !product ? (
         <View style={styles.centerWrapper}>
           <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
           <Text style={styles.errorText}>{error || 'Producto no encontrado'}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
-            <Text style={styles.retryBtnText}>Volver al inicio</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={back}>
+            <Text style={styles.retryBtnText}>Volver</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {loading && <View style={styles.refreshStatus} role="status" accessibilityLiveRegion="polite"><ActivityIndicator size="small" color="#0D9488" /><Text>Actualizando publicación...</Text></View>}
+          {!!error && <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>}
           {/* 2. Galería / Slider de Fotos Hero */}
           <View style={styles.heroGalleryContainer}>
-            <Image
+            {!imageError && imagesList[currentImageIndex] ? <Image
               source={{
-                uri: imageError
-                  ? DEFAULT_FALLBACK_IMG
-                  : imagesList[currentImageIndex] || DEFAULT_FALLBACK_IMG,
+                uri: imagesList[currentImageIndex],
               }}
               style={styles.heroImage}
               resizeMode="cover"
               onError={() => setImageError(true)}
-            />
+            /> : <View style={styles.centerWrapper}><Ionicons name="image-outline" size={56} color="#9098B1" /><Text>Imagen no disponible</Text></View>}
 
             {/* Flecha Siguiente (si hay más de 1 foto) */}
             {totalImages > 1 && (
@@ -310,7 +278,7 @@ export default function ProductDetailScreen() {
             {/* Contador de fotos (ej: 1/4) */}
             <View style={styles.counterBadge}>
               <Text style={styles.counterBadgeText}>
-                {currentImageIndex + 1}/{totalImages}
+                {totalImages ? `${currentImageIndex + 1}/${totalImages}` : 'Sin fotos'}
               </Text>
             </View>
 
@@ -321,14 +289,14 @@ export default function ProductDetailScreen() {
                 size={16}
                 color={isFavorite ? '#EF4444' : '#1F232E'}
               />
-              <Text style={styles.favBadgeText}>{favoriteCount}</Text>
+              <Text style={styles.favBadgeText}>{isFavorite ? 'Guardado' : 'Guardar'}</Text>
             </TouchableOpacity>
           </View>
 
           {/* 3. Título y Subtítulo */}
           <Text style={styles.productTitle}>{product.title}</Text>
           <Text style={styles.productSpecs}>
-            {conditionLabel} · {product.category?.name || 'Varios'} · {product.location || 'Pilar'}
+            {conditionLabel} · {product.category?.name || 'Varios'} · {product.location || 'Ubicación no informada'}
           </Text>
 
           {/* 4. Precio Grande */}
@@ -349,27 +317,23 @@ export default function ProductDetailScreen() {
             <View style={styles.sellerInfoCol}>
               <Text style={styles.sellerName}>{sellerName}</Text>
               <View style={styles.sellerRatingRow}>
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <Text style={styles.sellerRatingNumber}>5 (3)</Text>
+                {reviewAverage && <EstrellaIcon width={13} height={13} />}
+                <Text style={styles.sellerRatingNumber}>{reviewAverage ? `${reviewAverage} (${reviews.length} recientes)` : 'Sin valoraciones disponibles'}</Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.chatBtnOutline} onPress={handleOpenChat} activeOpacity={0.75}>
+            {!isOwner && <TouchableOpacity style={styles.chatBtnOutline} onPress={handleOpenChat} activeOpacity={0.75}>
               <Text style={styles.chatBtnOutlineText}>Chat</Text>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </View>
 
           {/* 6. Tags / Categorías en Pills */}
           <View style={styles.categoryPillsRow}>
             <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>{product.category?.name || 'Tecnología'}</Text>
+              <Text style={styles.categoryPillText}>{product.category?.name || 'Sin categoría'}</Text>
             </View>
             <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>Artículos de {product.location || 'Pilar'}</Text>
+              <Text style={styles.categoryPillText}>{STATUS_LABELS[product.status] || product.status}</Text>
             </View>
           </View>
 
@@ -413,6 +377,14 @@ export default function ProductDetailScreen() {
             {detailsExpanded && (
               <View style={styles.detailsGrid}>
                 <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Color</Text>
+                  <Text style={styles.detailValue}>{product.color || 'No informado'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Marca</Text>
+                  <Text style={styles.detailValue}>{product.brand || 'No informada'}</Text>
+                </View>
+                <View style={styles.detailRow}>
                   <Text style={styles.detailKey}>Estado</Text>
                   <Text style={styles.detailValue}>{conditionLabel}</Text>
                 </View>
@@ -426,7 +398,7 @@ export default function ProductDetailScreen() {
                 </View>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailKey}>Ubicación</Text>
-                  <Text style={styles.detailValue}>{product.location || 'Pilar'}</Text>
+                  <Text style={styles.detailValue}>{product.location || 'No informada'}</Text>
                 </View>
               </View>
             )}
@@ -442,47 +414,45 @@ export default function ProductDetailScreen() {
 
             <View style={styles.shippingFeatureRow}>
               <Ionicons name="location-sharp" size={16} color="#1F232E" />
-              <Text style={styles.shippingFeatureText}>{product.location || 'Pilar, Buenos Aires'}</Text>
+              <Text style={styles.shippingFeatureText}>{product.location || 'Ubicación no informada'}</Text>
             </View>
 
             <View style={styles.shippingFeatureRow}>
               <Ionicons name="shield-checkmark" size={16} color="#0D9488" />
-              <Text style={styles.shippingFeatureText}>Reserva segura con la app</Text>
+              <Text style={styles.shippingFeatureText}>Coordiná el encuentro con el vendedor</Text>
             </View>
           </View>
 
           {/* 10. Metadata de la publicación (Visitas y fecha) */}
           <View style={styles.metadataRow}>
-            <Text style={styles.metadataText}>Publicado recientemente</Text>
-            <View style={styles.viewsCountRow}>
-              <Ionicons name="eye-outline" size={15} color="#64748B" />
-              <Text style={styles.viewsCountText}>348</Text>
-            </View>
+            <Text style={styles.metadataText}>Publicado el {new Date(product.created_at).toLocaleDateString('es-AR')}</Text>
           </View>
 
           {/* 11. Sección de Valoraciones del Vendedor */}
           <View style={styles.reviewsSection}>
             <View style={styles.reviewsHeaderRow}>
               <EstrellaIcon width={18} height={18} />
-              <Text style={styles.reviewsAverage}>5</Text>
-              <Text style={styles.reviewsSellerTitle}>{sellerName} valoraciones</Text>
+              {reviewAverage && <Text style={styles.reviewsAverage}>{reviewAverage}</Text>}
+              <Text style={styles.reviewsSellerTitle}>Opiniones de compradores</Text>
             </View>
+            <Text style={styles.reviewDate}>Sobre el vendedor · hasta 20 valoraciones recientes</Text>
+            {reviewsLoading ? <View style={styles.refreshStatus} role="status" accessibilityLiveRegion="polite"><ActivityIndicator color="#0D9488" /><Text>Cargando opiniones...</Text></View> : reviewsError ? <Text accessibilityRole="alert">{reviewsError}</Text> : !reviews.length ? <Text style={styles.reviewDate}>Todavía no hay opiniones de compradores.</Text> : null}
 
             {/* Lista de valoraciones */}
             <View style={styles.reviewsList}>
-              {MOCK_SELLER_REVIEWS.map((rev) => (
+              {reviews.map((rev) => (
                 <View key={rev.id} style={styles.reviewItem}>
                   <View style={styles.reviewAuthorRow}>
                     <View style={styles.reviewAvatar}>
-                      <Text style={styles.reviewAvatarText}>{rev.author.charAt(0)}</Text>
+                      <Ionicons name="person-outline" size={16} color="#64748B" />
                     </View>
                     <View>
-                      <Text style={styles.reviewAuthorName}>{rev.author}</Text>
-                      <Text style={styles.reviewDate}>{rev.date}</Text>
+                      <Text style={styles.reviewAuthorName}>Comprador</Text>
+                      <Text style={styles.reviewDate}>{new Date(rev.created_at).toLocaleDateString('es-AR')}</Text>
                     </View>
                   </View>
                   <View style={styles.reviewStarsRow}>
-                    {Array.from({ length: rev.stars }).map((_, sIdx) => (
+                    {Array.from({ length: Math.max(0, Math.min(5, rev.rating)) }).map((_, sIdx) => (
                       <EstrellaIcon key={sIdx} width={13} height={13} />
                     ))}
                   </View>
@@ -491,16 +461,13 @@ export default function ProductDetailScreen() {
               ))}
             </View>
 
-            <TouchableOpacity style={styles.allReviewsBtn} activeOpacity={0.75}>
-              <Text style={styles.allReviewsBtnText}>Ver todas las valoraciones</Text>
-            </TouchableOpacity>
           </View>
 
           {/* 12. Sigue explorando (Tags de búsqueda) */}
           <View style={styles.exploreSection}>
             <Text style={styles.exploreTitle}>Sigue explorando</Text>
             <View style={styles.chipsWrapper}>
-              {['Computadoras', 'Mini PCs', 'Computadoras Desktop', 'Computadoras Gamer', 'Macbook', 'Hardware'].map((chip, idx) => (
+              {[product.category?.name || 'Varios', conditionLabel].map((chip, idx) => (
                 <View key={idx} style={styles.chipPill}>
                   <Text style={styles.chipPillText}>{chip}</Text>
                 </View>
@@ -513,36 +480,45 @@ export default function ProductDetailScreen() {
           </View>
 
           {/* 13. Más como esto (Productos Relacionados) */}
-          <View style={styles.relatedSection}>
+          {(!!relatedProducts.length || relatedLoading || !!relatedError) && <View style={styles.relatedSection}>
             <Text style={styles.relatedTitle}>Más como esto</Text>
+            {relatedLoading && <View style={styles.refreshStatus} role="status" accessibilityLiveRegion="polite"><ActivityIndicator color="#0D9488" /><Text>Cargando productos relacionados...</Text></View>}
+            {!!relatedError && <Text accessibilityRole="alert">{relatedError}</Text>}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.relatedScroll}>
-              {MOCK_RELATED_PRODUCTS.map((rel) => (
-                <View key={rel.id} style={styles.relatedCard}>
-                  <Image source={{ uri: rel.image }} style={styles.relatedImage} />
+              {relatedProducts.map((rel) => (
+                <TouchableOpacity key={rel.id} style={styles.relatedCard} onPress={() => router.push({ pathname: '/modal', params: { productId: rel.id } })}>
+                  {rel.cover_image ? <Image source={{ uri: rel.cover_image }} style={styles.relatedImage} /> : <View style={[styles.relatedImage, { backgroundColor: '#F1F5F9' }]} />}
                   <Text style={styles.relatedCardTitle} numberOfLines={1}>
                     {rel.title}
                   </Text>
                   <Text style={styles.relatedCardSpecs} numberOfLines={1}>
-                    {rel.condition}
+                    {CONDITION_LABELS[rel.condition] || rel.condition}
                   </Text>
-                  <Text style={styles.relatedCardPrice}>{rel.price}</Text>
-                </View>
+                  <Text style={styles.relatedCardPrice}>{formatProductPrice(rel.price, rel.currency)}</Text>
+                </TouchableOpacity>
               ))}
             </ScrollView>
-          </View>
+          </View>}
 
-          {/* Espacio para la barra de botones fija */}
-          <View style={{ height: 80 }} />
         </ScrollView>
       )}
 
-      {/* 14. BARRA FLOTANTE FIJA: HACER OFERTA / COMPRAR */}
-      {product && (
-        <View style={styles.floatingActionBar}>
+      {/* 14. ACCIONES FIJAS FUERA DEL SCROLL, ENCIMA DE LA NAVEGACIÓN */}
+      {product && !error && (
+        <View testID="product-actions" style={styles.actionBar}>
+          {isOwner ? <>
+            <TouchableOpacity style={styles.offerBtn} disabled={loading} onPress={() => router.push({ pathname: '/edit-product', params: { productId: product.id } })}>
+              <Text style={styles.offerBtnText}>Editar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.buyBtn} disabled={loading} onPress={() => { setDeleteError(null); setShowDelete(true); }}>
+              <Text style={styles.buyBtnText}>Eliminar</Text>
+            </TouchableOpacity>
+          </> : product.status === 'activo' ? <>
           <TouchableOpacity
             style={styles.offerBtn}
             activeOpacity={0.8}
             onPress={handleOpenChat}
+            disabled={loading}
           >
             <Text style={styles.offerBtnText}>Hacer oferta</Text>
           </TouchableOpacity>
@@ -551,14 +527,17 @@ export default function ProductDetailScreen() {
             style={styles.buyBtn}
             activeOpacity={0.85}
             onPress={handleBuyProduct}
+            disabled={loading}
           >
             <Text style={styles.buyBtnText}>Comprar</Text>
           </TouchableOpacity>
+          </> : <Text style={styles.productSpecs}>Esta publicación está {STATUS_LABELS[product.status]?.toLowerCase() || product.status}.</Text>}
         </View>
       )}
+      <ProductDialog visible={showDelete} title="Eliminar publicación" message="El producto dejará de aparecer en el catálogo y en Mis productos. Se conservará su registro mediante una baja lógica." busy={deleting} error={deleteError} onCancel={() => setShowDelete(false)} onConfirm={removeProduct} />
 
       {/* 15. BARRA DE NAVEGACIÓN INFERIOR SOLTAPP */}
-      <View style={styles.bottomNavContainer}>
+      <View testID="product-navigation" style={styles.bottomNavContainer}>
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem} onPress={() => router.push('/home')} activeOpacity={0.7}>
             <HomeIcon width={22} height={22} stroke="#9098B1" />
@@ -613,6 +592,10 @@ const styles = StyleSheet.create({
     marginRight: -4,
   },
   logoWrapper: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#3BD7C2',
+    borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -660,6 +643,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  refreshStatus: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
@@ -689,6 +673,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   scrollContent: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 20,
@@ -696,7 +683,7 @@ const styles = StyleSheet.create({
   },
   heroGalleryContainer: {
     width: '100%',
-    height: 240,
+    aspectRatio: 1.2,
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
@@ -888,10 +875,13 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   detailKey: {
+    flex: 1,
     fontSize: 13,
     color: '#64748B',
   },
   detailValue: {
+    flex: 1,
+    textAlign: 'right',
     fontSize: 13,
     fontWeight: '600',
     color: '#1F232E',
@@ -1105,11 +1095,8 @@ const styles = StyleSheet.create({
     color: '#0D9488',
     marginTop: 4,
   },
-  floatingActionBar: {
-    position: 'absolute',
-    bottom: 58,
-    left: 0,
-    right: 0,
+  actionBar: {
+    flexShrink: 0,
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
@@ -1152,6 +1139,7 @@ const styles = StyleSheet.create({
     color: '#1F232E',
   },
   bottomNavContainer: {
+    flexShrink: 0,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',

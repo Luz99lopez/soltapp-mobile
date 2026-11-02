@@ -14,10 +14,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { supabase } from '../supabase';
-import { getAuthRedirectUri } from '../utils/auth';
+import { supabase, SUPABASE_URL } from '../supabase';
+import { getAuthRedirectUri, resetWebAuthAccess } from '../utils/auth';
+import { withAuthTimeout } from '../utils/authTimeout';
+import { NativeOAuthError, runNativeOAuth } from '../services/nativeOAuthService';
 
 // Componentes SVG vectoriales oficiales
 import LogoSoltapp from '../../assets/svgs/logotipo color.svg';
@@ -28,29 +30,47 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { authError } = useLocalSearchParams<{ authError?: string }>();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(authError === 'session-timeout' ? 'La sesión guardada no respondió a tiempo. Podés restablecer el acceso de este navegador y volver a iniciar sesión.' : null);
+  const [allowLocalReset, setAllowLocalReset] = useState(authError === 'session-timeout');
+  const nativeAttempt = React.useRef<AbortController | null>(null);
+  const mounted = React.useRef(true);
+
+  React.useEffect(() => {
+    mounted.current = true;
+    // Expo Router puede abrir /home por el enlace antes de terminar setSession.
+    // Conservar ese intercambio al desmontar; el servicio limita la espera y limpia
+    // su observador. La cancelación explícita sí invalida los retornos tardíos.
+    return () => { mounted.current = false; };
+  }, []);
 
   // Redirección automática si el usuario ya está autenticado o completa OAuth
   React.useEffect(() => {
+    let active = true;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // El flujo nativo registra y comprueba la sesión antes de navegar.
+      if (Platform.OS !== 'web' && nativeAttempt.current) return;
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
         router.replace('/home' as any);
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
+    withAuthTimeout(supabase.auth.getSession()).then(({ data: { session } }) => {
+      if (active && session && !(Platform.OS !== 'web' && nativeAttempt.current)) {
         router.replace('/home' as any);
       }
+    }).catch(reason => {
+      if (active) { setErrorMessage(reason.message || 'No se pudo recuperar la sesión guardada.'); setAllowLocalReset(true); }
     });
 
     return () => {
+      active = false;
       subscription.unsubscribe();
     };
   }, [router]);
@@ -79,48 +99,11 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // 1. Verificación previa: Comprobar si el correo existe en la base de datos (tabla profiles o users)
-      let emailExists = false;
-      let checkedViaTable = false;
-
-      try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, email')
-          .eq('email', trimmedEmail)
-          .maybeSingle();
-
-        if (!profileError) {
-          checkedViaTable = true;
-          emailExists = !!profileData;
-        } else {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('id, email')
-            .eq('email', trimmedEmail)
-            .maybeSingle();
-
-          if (!userError) {
-            checkedViaTable = true;
-            emailExists = !!userData;
-          }
-        }
-      } catch {
-        // En caso de que RLS impida lectura anónima o no exista la tabla, continuamos con el flujo de auth
-      }
-
-      // Si la consulta a la base de datos confirmó que el correo NO existe
-      if (checkedViaTable && !emailExists) {
-        setErrorMessage('El correo no está registrado');
-        setLoading(false);
-        return;
-      }
-
-      // 2. Intentar autenticación con Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // Auth es la fuente de identidad; RLS puede ocultar perfiles a usuarios sin sesión.
+      const { data, error } = await withAuthTimeout(supabase.auth.signInWithPassword({
         email: trimmedEmail,
         password,
-      });
+      }));
 
       if (error) {
         const errorMsg = (error.message || '').toLowerCase();
@@ -186,7 +169,8 @@ export default function LoginScreen() {
         setErrorMessage('Usuario o contraseña incorrectos. Si te registraste con otro método, iniciá sesión con Google o Facebook.');
       }
     } catch (err) {
-      setErrorMessage('Ocurrió un error de conexión. Inténtalo de nuevo.');
+      setErrorMessage(err instanceof Error ? err.message : 'Ocurrió un error de conexión. Inténtalo de nuevo.');
+      if (err instanceof Error && err.name === 'AuthTimeoutError') setAllowLocalReset(true);
     } finally {
       setLoading(false);
     }
@@ -194,82 +178,50 @@ export default function LoginScreen() {
 
   // Inicio de sesión Social (Google / Facebook) con Supabase OAuth
   const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+    if (Platform.OS !== 'web' && nativeAttempt.current) return;
+    const attempt = Platform.OS !== 'web' ? new AbortController() : null;
+    if (attempt) nativeAttempt.current = attempt;
     try {
       setSocialLoading(provider);
+      setErrorMessage(null);
 
       // Genera dinámicamente la URL de redirección (auth.soltapp.com.ar, localhost o esquema nativo)
-      const redirectUrl = getAuthRedirectUri();
+      const redirectUrl = getAuthRedirectUri(Platform.OS === 'web' ? 'auth/callback' : 'home');
 
       if (Platform.OS === 'web') {
-        const { error } = await supabase.auth.signInWithOAuth({
+        // Controlar el redirect aquí evita que una respuesta tardía navegue tras un timeout.
+        const { data, error } = await withAuthTimeout(supabase.auth.signInWithOAuth({
           provider,
           options: {
             redirectTo: redirectUrl,
+            skipBrowserRedirect: true,
             queryParams: {
               prompt: 'select_account',
             },
           },
-        });
+        }));
         if (error) throw error;
+        if (!data.url) throw new Error('No se recibió una URL para abrir el proveedor.');
+        window.location.assign(data.url);
         return;
       }
 
-      // Flujo móvil nativo (iOS / Android)
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
-          queryParams: {
-            prompt: 'select_account',
-          },
-        },
+      // Mismo OAuth nativo: límites de espera y retorno validado.
+      if (!attempt) return;
+      await runNativeOAuth(provider, redirectUrl, {
+        signal: attempt.signal,
       });
-
-      if (error) throw error;
-
-      if (data?.url) {
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-
-        if (result.type === 'success' && result.url) {
-          const urlString = result.url;
-          const paramsString = urlString.includes('#')
-            ? urlString.split('#')[1]
-            : urlString.includes('?')
-            ? urlString.split('?')[1]
-            : '';
-
-          const searchParams = new URLSearchParams(paramsString);
-          
-          // 1. Soporte para flujo PKCE (Code exchange)
-          const code = searchParams.get('code');
-          if (code) {
-            const { error: codeError } = await supabase.auth.exchangeCodeForSession(code);
-            if (codeError) throw codeError;
-            router.replace('/home' as any);
-            return;
-          }
-
-          // 2. Soporte para flujo Implicit (Access & Refresh tokens)
-          const accessToken = searchParams.get('access_token');
-          const refreshToken = searchParams.get('refresh_token');
-
-          if (accessToken && refreshToken) {
-            const { error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-
-            if (sessionError) throw sessionError;
-            router.replace('/home' as any);
-            return;
-          }
-        }
-      }
+      if (mounted.current && !attempt.signal.aborted) router.replace('/home' as any);
     } catch (err: any) {
-      setErrorMessage(err.message || `No se pudo autenticar con ${provider}.`);
+      if (Platform.OS === 'web') {
+        setErrorMessage(err.message || `No se pudo autenticar con ${provider}.`);
+        if (err.name === 'AuthTimeoutError') setAllowLocalReset(true);
+      } else if (mounted.current) {
+        setErrorMessage(err instanceof NativeOAuthError ? err.message : 'No se pudo iniciar sesión. Volvé a intentar.');
+      }
     } finally {
-      setSocialLoading(null);
+      if (nativeAttempt.current === attempt) nativeAttempt.current = null;
+      if (mounted.current) setSocialLoading(null);
     }
   };
 
@@ -283,7 +235,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -366,10 +318,14 @@ export default function LoginScreen() {
                 <View style={styles.errorContainer}>
                   <Feather name="alert-circle" size={17} color="#E11D48" style={styles.errorIcon} />
                   <View style={styles.errorTextContainer}>
-                    <Text style={styles.errorText}>{errorMessage}</Text>
+                    <Text accessibilityRole="alert" style={styles.errorText}>{errorMessage}</Text>
                   </View>
                 </View>
               )}
+              {allowLocalReset && Platform.OS === 'web' && <TouchableOpacity accessibilityRole="button" onPress={() => {
+                try { resetWebAuthAccess(SUPABASE_URL); }
+                catch { setErrorMessage('No se pudo restablecer el acceso guardado. Probá abrir Soltapp en una ventana nueva del navegador.'); }
+              }} style={{ paddingVertical: 12 }}><Text style={{ color: '#0D9488', fontWeight: '600', textAlign: 'center' }}>Restablecer acceso en este navegador</Text></TouchableOpacity>}
 
               {/* Botón Principal "Ingresá" */}
               <TouchableOpacity
@@ -405,7 +361,7 @@ export default function LoginScreen() {
                 disabled={socialLoading !== null}
               >
                 {socialLoading === 'google' ? (
-                  <ActivityIndicator color="#EA4335" size="small" />
+                  <><ActivityIndicator color="#EA4335" size="small" /><Text style={styles.socialButtonText}>Abriendo Google...</Text></>
                 ) : (
                   <>
                     <View style={styles.socialIconWrapper}>
@@ -424,7 +380,7 @@ export default function LoginScreen() {
                 disabled={socialLoading !== null}
               >
                 {socialLoading === 'facebook' ? (
-                  <ActivityIndicator color="#1877F2" size="small" />
+                  <><ActivityIndicator color="#1877F2" size="small" /><Text style={styles.socialButtonText}>Abriendo Facebook...</Text></>
                 ) : (
                   <>
                     <View style={styles.socialIconWrapper}>
@@ -436,6 +392,11 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
+            {Platform.OS !== 'web' && socialLoading && (
+              <TouchableOpacity accessibilityRole="button" onPress={() => nativeAttempt.current?.abort()} style={{ paddingVertical: 12 }}>
+                <Text style={{ color: '#0D9488', textAlign: 'center' }}>Cancelar inicio de sesión</Text>
+              </TouchableOpacity>
+            )}
             {/* Enlaces de pie de pantalla */}
             <View style={styles.footerContainer}>
               <TouchableOpacity

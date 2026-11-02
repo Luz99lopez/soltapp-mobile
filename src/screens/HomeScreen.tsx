@@ -5,7 +5,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Platform,
@@ -14,8 +13,9 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '../supabase';
 import { fetchHomeProducts, ProductListItem } from '../services';
 import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
@@ -90,9 +90,9 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     loadProducts();
-  }, [loadProducts]);
+  }, [loadProducts]));
 
   useEffect(() => {
     if (params?.tab === 'inbox') {
@@ -187,20 +187,7 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    // Manejo de intercambio de código OAuth (PKCE) en navegador web móvil o desktop
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      const code = searchParams.get('code');
-      if (code) {
-        supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
-          if (data?.user) {
-            setCurrentUser(data.user);
-            loadUserData(data.user);
-          }
-        });
-      }
-    }
-
+    // La detección de OAuth pertenece al cliente/callback, no a Home.
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setCurrentUser(user);
@@ -450,7 +437,7 @@ export default function HomeScreen() {
             {/* SECCIÓN: CATÁLOGO */}
             <View style={styles.tuSection}>
               <Text style={styles.tuSectionTitle}>CATÁLOGO</Text>
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7} onPress={() => router.push('/my-products')}>
                 <View style={styles.tuMenuItemLeft}>
                   <ProductoIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Productos</Text>
@@ -559,6 +546,11 @@ export default function HomeScreen() {
               router.push({
                 pathname: '/chat',
                 params: {
+                  conversationId: conv.conversationId,
+                  productId: conv.productId,
+                  sellerId: conv.sellerId,
+                  buyerId: conv.buyerId,
+                  imageUri: conv.imageUri,
                   productTitle: conv.productTitle,
                   productPrice: conv.productPrice,
                   sellerName: conv.sellerName,

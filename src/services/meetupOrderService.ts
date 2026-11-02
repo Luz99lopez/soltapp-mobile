@@ -92,9 +92,21 @@ export const meetupOrderService = {
   async createMeetupOrder(
     productId?: string,
     sellerId?: string,
-    details?: OrderCreateDetails
+    details?: OrderCreateDetails,
+    options?: { requireRemote: boolean }
   ): Promise<MeetupOrder> {
-    const currentUser = await accountService.getCurrentUser();
+    // Las compras de publicaciones reales deben persistirse: nunca confirmar una demo por error.
+    const currentUser = options?.requireRemote ? await (async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) throw new Error('Iniciá sesión para confirmar la compra.');
+      if (!isUuid(productId) || !isUuid(sellerId)) throw new Error('Faltan los datos de la publicación.');
+      const { data: product, error: productError } = await supabase.from('products')
+        .select('id, seller_id, status').eq('id', productId!).maybeSingle();
+      if (productError || !product || product.status !== 'activo') throw new Error('El producto ya no está disponible para comprar.');
+      if (product.seller_id !== sellerId) throw new Error('El vendedor no coincide con la publicación.');
+      if (product.seller_id === user.id) throw new Error('No podés comprar tu propia publicación.');
+      return { id: user.id, fullName: user.user_metadata?.full_name || user.user_metadata?.name || 'Comprador' };
+    })() : await accountService.getCurrentUser();
 
     // Vendedor: si no se especifica, toma el ID de yassvica
     let targetSellerId = sellerId;
@@ -147,7 +159,10 @@ export const meetupOrderService = {
         } else {
           throw new Error(error?.message || 'Fallback directo');
         }
-      } catch {
+      } catch (error) {
+        if (options?.requireRemote) {
+          throw new Error(error instanceof Error ? error.message : 'No se pudo crear la orden en Supabase.');
+        }
         const demoId = 'order-' + Date.now().toString(36);
         createdOrder = {
           id: demoId,

@@ -27,6 +27,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
+      if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof Event === 'function') window.dispatchEvent(new Event('soltapp:ready'));
     }
   }, [loaded]);
 
@@ -60,6 +61,8 @@ function RootLayoutNav() {
         <Stack.Screen name="profile" options={{ headerShown: false }} />
         <Stack.Screen name="public-profile" options={{ headerShown: false }} />
         <Stack.Screen name="upload" options={{ headerShown: false }} />
+        <Stack.Screen name="my-products" options={{ headerShown: false }} />
+        <Stack.Screen name="edit-product" options={{ headerShown: false }} />
         <Stack.Screen name="chat" options={{ headerShown: false }} />
         <Stack.Screen name="cart" options={{ headerShown: false }} />
         <Stack.Screen name="compras" options={{ headerShown: false }} />

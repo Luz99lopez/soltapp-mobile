@@ -108,7 +108,7 @@ Al presionar sobre cualquier conversación, ingresarás a la pantalla de **Chat*
 
 ## 5. Servicio de Chat y Negociación
 
-La pantalla de chat te permite acordar detalles, consultar dudas y coordinar la entrega o compra del producto en tiempo real.
+La pantalla de chat permite acordar detalles sobre un producto. El cliente de persistencia compartida requiere que el equipo revise y habilite el contrato de Supabase; esa propuesta todavía no fue ejecutada. Si falta el servicio, verás un aviso y no se habilitará el envío. Ver [estado y coordinación](LOGIN_Y_CHAT.md).
 
 ### 5.1 Elementos de la Pantalla de Chat
 - **Encabezado Superior:**
@@ -116,21 +116,21 @@ La pantalla de chat te permite acordar detalles, consultar dudas y coordinar la 
   - **Miniatura, precio y nombre del producto:** Tienes siempre visible qué artículo estás negociando (ej. *Nike Air Force 1* o *Separadores Braid 5×100* con su respectivo precio).
 - **Ficha del Vendedor:**
   - **Avatar:** Foto o silueta del vendedor.
-  - **Nombre del vendedor:** (ej. *Alex Silva*).
-  - **Valoración:** Puntuación en estrellas e historial de valoraciones (ej. `★ 4,8 (124 valoraciones)`).
-  - **Tiempo de respuesta:** Indicador de atención (ej. *Responde en 24 horas*).
+  - **Nombre del participante:** Obtenido del perfil, según se trate de una compra o una venta.
 - **Línea de Tiempo y Mensajes:**
   - **Separador de fecha:** Agrupa los mensajes cronológicamente (ej. *10 dic 2025*).
-  - **Tus mensajes (Burbuja Turquesa `#B4F4EB`):** Aparecen alineados con el color distintivo de Soltapp, la hora de envío y la doble tilde de lectura `✓✓`.
+  - **Tus mensajes (Burbuja Turquesa `#B4F4EB`):** Muestran la hora y una marca cuando el servidor confirma el guardado; no se afirma que el destinatario los haya leído.
   - **Mensajes del interlocutor (Burbuja Gris):** Respuestas claras con su respectiva hora.
-  - **Indicador de escritura:** Muestra en tiempo real cuando la otra persona está redactando una respuesta (*"Alex Silva está escribiendo..."*).
+  - **Historial anterior:** El botón correspondiente permite cargar mensajes más antiguos.
 
 ### 5.2 Cómo Enviar Mensajes
 1. En la parte inferior verás el botón píldora **"Chatea"**.
 2. Al presionarlo, se desplegará la barra de texto con el teclado.
 3. Escribe tu consulta o propuesta (ej. *"¿Haces envíos a mi zona?"*, *"¿Podemos coordinar para hoy por la tarde?"*).
-4. Toca el botón de enviar (icono de flecha/avión). Tu mensaje se agregará al instante con la hora actual.
+4. Toca el botón de enviar (icono de flecha/avión). El mensaje se agrega cuando el servidor confirma el guardado. Si falla, conserva el texto y permite reintentar sin generar otra fila para ese envío.
 5. Puedes pulsar la pequeña flecha hacia abajo `(⌄)` si deseas minimizar la barra de escritura y volver a la vista limpia del chat.
+
+No hay respuestas automáticas. El historial local de la demostración anterior no se importa a Supabase. El funcionamiento entre dos cuentas reales sigue pendiente de habilitación y verificación.
 
 ---
 

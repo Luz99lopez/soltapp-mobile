@@ -1,5 +1,7 @@
 # Soltapp Mobile 📱🛒
 
+Para iniciar/detener la vista web de producción en Windows, usar `INICIAR_SOLTAPP_ESTABLE.cmd` y `DETENER_SOLTAPP_ESTABLE.cmd`. Ver [SOLTAPP_ESTABLE.md](SOLTAPP_ESTABLE.md). La coordinación del backend de chat pendiente está en [COORDINACION_INTEGRANTE_2_CHAT.md](COORDINACION_INTEGRANTE_2_CHAT.md).
+
 **Soltapp Mobile** es una aplicación móvil de compra y venta de productos de segunda mano y nuevos con enfoque en cercanía y comercio local (marketplace estilo Wallapop / Mercado Libre). Desarrollada con **React Native**, **Expo SDK 57**, **Expo Router** y backend en **Supabase**.
 
 ---
@@ -20,12 +22,12 @@
   - Selector tipo píldora entre **Mensajes (con contador de no leídos)** y **Notificaciones**.
   - Tarjetas de conversación con miniatura, remitente, fecha y nombre del producto.
 - **Servicio de Chat:**
-  - Conversación en tiempo real con el vendedor.
+  - Cliente de conversaciones por producto, comprador y vendedor con servicios Supabase.
   - Encabezado con miniatura del producto, precio y título.
-  - Ficha del vendedor con foto de perfil, reputación en estrellas (`★ 4,8`) y tiempo de respuesta promedio.
-  - Burbujas de chat personalizadas: color turquesa `#B4F4EB` para los mensajes enviados, con hora y doble tilde de lectura (`✓✓`).
-  - Botón de acción `Chatea` y barra de escritura interactiva con simulación de respuesta automática.
-  - Persistencia de mensajes en almacenamiento local (`AsyncStorage`).
+  - Historial paginado, envío con identificador de reintento, Realtime y sincronización periódica de respaldo.
+  - Burbujas turquesa y grises; el indicador de guardado no representa lectura del destinatario.
+  - Sin respuestas automáticas ni guardado local de mensajes.
+  - **Pendiente de coordinación:** la propuesta de tablas/RLS no se ejecutó; el chat entre cuentas reales todavía debe habilitarse y verificarse. Ver [LOGIN_Y_CHAT.md](LOGIN_Y_CHAT.md).
 - **Perfil de Usuario ("Tú"):**
   - Vista resumen con foto/avatar, valoración y antigüedad en la plataforma.
   - Accesos directos a catálogo de productos publicados, compras, ventas, billetera y ajustes.
