@@ -19,6 +19,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { productService, ProductDetail, ProductListItem } from '../services';
 import { meetupOrderService } from '../services/meetupOrderService';
 import { SoltappReview } from '../types/order.types';
+import { useFavorites } from '../contexts/FavoritesProvider';
+import FavoritesFeedback from '../components/FavoritesFeedback';
 
 // SVGs oficiales
 import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
@@ -95,8 +97,8 @@ export default function ProductDetailScreen() {
 
   // Estados de UI
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
-  const [isFavorite, setIsFavorite] = useState<boolean>(false);
-  const [favoriteCount, setFavoriteCount] = useState<number>(2);
+  const { entries: favorites, pending: favoritePending, loading: favoritesLoading, ready: favoritesReady, toggle } = useFavorites();
+  const isFavorite = favorites.some((entry) => entry.productId === productId);
   const [descExpanded, setDescExpanded] = useState<boolean>(true);
   const [detailsExpanded, setDetailsExpanded] = useState<boolean>(true);
   const [imageError, setImageError] = useState<boolean>(false);
@@ -202,15 +204,8 @@ export default function ProductDetailScreen() {
 
   const totalImages = imagesList.length;
 
-  // Toggle de Favorito
   const toggleFavorite = () => {
-    if (isFavorite) {
-      setIsFavorite(false);
-      setFavoriteCount((prev) => Math.max(0, prev - 1));
-    } else {
-      setIsFavorite(true);
-      setFavoriteCount((prev) => prev + 1);
-    }
+    if (product) void toggle(product.id, product);
   };
 
   // Navegación siguiente / anterior de fotos
@@ -343,16 +338,25 @@ export default function ProductDetailScreen() {
             </View>
 
             {/* Botón de Favorito */}
-            <TouchableOpacity style={styles.favBadge} onPress={toggleFavorite} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.favBadge}
+              onPress={toggleFavorite}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+              accessibilityState={{ selected: isFavorite, disabled: !favoritesReady || favoritesLoading || favoritePending.includes(product.id) }}
+              disabled={!favoritesReady || favoritesLoading || favoritePending.includes(product.id)}
+            >
               <Ionicons
                 name={isFavorite ? 'heart' : 'heart-outline'}
                 size={16}
                 color={isFavorite ? '#EF4444' : '#1F232E'}
               />
-              <Text style={styles.favBadgeText}>{favoriteCount}</Text>
+              <Text style={styles.favBadgeText}>{isFavorite ? 'Guardado' : 'Guardar'}</Text>
             </TouchableOpacity>
           </View>
 
+          <FavoritesFeedback />
           {/* 3. Título y Subtítulo */}
           <Text style={styles.productTitle}>{product.title}</Text>
           <Text style={styles.productSpecs}>
