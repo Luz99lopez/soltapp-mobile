@@ -17,6 +17,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../supabase';
+import { accountService } from '../services/accountService';
 import { getAuthRedirectUri } from '../utils/auth';
 
 // Componentes SVG vectoriales oficiales
@@ -179,8 +180,8 @@ export default function LoginScreen() {
         else {
           setErrorMessage('Usuario o contraseña incorrectos. Si te registraste con otro método, iniciá sesión con Google o Facebook.');
         }
-      } else if (data?.session) {
-        // Redirección exitosa
+      } else if (data?.session && data?.user) {
+        await accountService.switchUser(data.user.id);
         router.replace('/home' as any);
       } else {
         setErrorMessage('Usuario o contraseña incorrectos. Si te registraste con otro método, iniciá sesión con Google o Facebook.');

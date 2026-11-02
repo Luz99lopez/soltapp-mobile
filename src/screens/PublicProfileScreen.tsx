@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,8 +16,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
+import { meetupOrderService } from '../services/meetupOrderService';
+import { SoltappReview } from '../types/order.types';
 import CategoriesMenuModal from '../components/CategoriesMenuModal';
 import EmptyShelfIllustration from '../components/EmptyShelfIllustration';
 import BottomNavbar from '../components/BottomNavbar';
@@ -30,6 +32,7 @@ const TEXT_DARK = '#1F232E';
 
 export default function PublicProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ userId?: string; userName?: string; tab?: string }>();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'en_venta' | 'valoraciones' | 'info'>('en_venta');
   const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
@@ -47,30 +50,116 @@ export default function PublicProfileScreen() {
   const [userProducts, setUserProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<SoltappReview[]>([]);
+  const [resolvedTargetId, setResolvedTargetId] = useState<string | null>(params.userId || null);
+  const [salesCount, setSalesCount] = useState<number>(0);
+  const [purchasesCount, setPurchasesCount] = useState<number>(0);
+
+  const loadUserMetrics = useCallback(async (uid: string) => {
+    try {
+      const orders = await meetupOrderService.getAllLocalOrders();
+      const sales = orders.filter((o) => (o.seller_id === uid || (uid === '122230dc-4ee3-407a-a32d-07a538b32212' && o.seller?.full_name === 'yassvica')) && (o.status === 'COMPLETED' || o.status === 'DELIVERED')).length;
+      const purchases = orders.filter((o) => (o.buyer_id === uid || (uid === 'f12e3fba-56fd-421b-8f0f-63061d4e5bdb' && o.buyer?.full_name === 'Kike Sanabria')) && (o.status === 'COMPLETED' || o.status === 'DELIVERED')).length;
+      setSalesCount(sales);
+      setPurchasesCount(purchases);
+    } catch {}
+  }, []);
+
+  const loadReviews = useCallback(async (uid: string) => {
+    try {
+      const list = await meetupOrderService.getUserReviews(uid);
+      setReviews(list);
+    } catch (e) {
+      console.warn('[PublicProfileScreen] Error cargando reseñas:', e);
+    }
+  }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setCurrentUser(user);
+    if (params.tab === 'valoraciones') {
+      setActiveTab('valoraciones');
+    }
+  }, [params.tab]);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUser(user);
+
+      const targetId = params.userId || user?.id;
+      setResolvedTargetId(targetId || null);
+
+      if (params.userName) {
+        setDisplayName(params.userName);
+      } else if (params.userId === '122230dc-4ee3-407a-a32d-07a538b32212') {
+        setDisplayName('yassvica');
+      } else if (params.userId === 'f12e3fba-56fd-421b-8f0f-63061d4e5bdb') {
+        setDisplayName('Kike Sanabria');
+      } else if (user) {
         extractProfileData(user);
-        loadUserProducts(user.id);
+      }
+
+      if (targetId) {
+        loadUserProducts(targetId);
+        loadReviews(targetId);
+        loadUserMetrics(targetId);
       } else {
         setLoadingProducts(false);
       }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null);
-      if (session?.user) {
-        extractProfileData(session.user);
-        loadUserProducts(session.user.id);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
     };
-  }, []);
+
+    fetchProfile();
+  }, [params.userId, params.userName, loadReviews, loadUserMetrics]);
+
+  // Polling automático para sincronizar en tiempo real entre teléfonos
+  useEffect(() => {
+    if (!resolvedTargetId) return;
+
+    loadReviews(resolvedTargetId);
+    loadUserMetrics(resolvedTargetId);
+
+    const interval = setInterval(() => {
+      loadReviews(resolvedTargetId);
+      loadUserMetrics(resolvedTargetId);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [resolvedTargetId, loadReviews, loadUserMetrics]);
+
+  const totalReviewsCount = reviews.length;
+  const averageRatingScore = useMemo(() => {
+    if (totalReviewsCount === 0) return '5.0';
+    const sum = reviews.reduce((acc, r) => acc + (r.rating || 5), 0);
+    return (sum / totalReviewsCount).toFixed(1);
+  }, [reviews, totalReviewsCount]);
+
+  const breakdownData = useMemo(() => {
+    return [5, 4, 3, 2, 1].map((stars) => {
+      const count = reviews.filter((r) => Math.round(r.rating) === stars).length;
+      const percent = totalReviewsCount > 0 ? Math.round((count / totalReviewsCount) * 100) : (stars === 5 ? 100 : 0);
+      return { stars, count, percent };
+    });
+  }, [reviews, totalReviewsCount]);
+
+  const displayedReviews = useMemo(() => {
+    let list = [...reviews];
+    if (selectedRole) {
+      if (selectedRole === 'comprador') {
+        list = list.filter((r) => r.role === 'buyer');
+      } else if (selectedRole === 'vendedor') {
+        list = list.filter((r) => r.role === 'seller');
+      }
+    }
+    if (selectedSort === 'mayor_puntuacion') {
+      list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    } else if (selectedSort === 'menor_puntuacion') {
+      list.sort((a, b) => (a.rating || 0) - (b.rating || 0));
+    } else {
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    return list;
+  }, [reviews, selectedRole, selectedSort]);
 
   const extractProfileData = (user: any) => {
     const meta = user?.user_metadata || {};
@@ -103,6 +192,7 @@ export default function PublicProfileScreen() {
   const loadUserProducts = async (userId: string) => {
     try {
       setLoadingProducts(true);
+      const soldIds = await meetupOrderService.getSoldProductIds();
       const { data, error } = await supabase
         .from('products')
         .select('*, product_images(*)')
@@ -110,7 +200,7 @@ export default function PublicProfileScreen() {
         .eq('status', 'activo');
 
       if (!error && data) {
-        setUserProducts(data);
+        setUserProducts(data.filter((p: any) => !soldIds.includes(p.id)));
       }
     } catch (_) {
       // Ignorar silenciosamente si no hay productos
@@ -146,6 +236,27 @@ export default function PublicProfileScreen() {
     currentUser?.user_metadata?.avatar_url ||
     currentUser?.user_metadata?.picture ||
     null;
+
+  const formatReviewDate = (isoString?: string) => {
+    if (!isoString) return 'Reciente';
+    try {
+      const d = new Date(isoString);
+      const now = new Date();
+      const diffMs = now.getTime() - d.getTime();
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      if (diffMins < 2) return 'Ahora mismo';
+      if (diffMins < 60) return `Hace ${diffMins} min`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `Hace ${diffHours} h`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return 'Ayer';
+      if (diffDays < 30) return `Hace ${diffDays} días`;
+      const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+      return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    } catch {
+      return 'Reciente';
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -185,27 +296,38 @@ export default function PublicProfileScreen() {
                 {displayName}
               </Text>
 
-              {/* Valoración en estrellas */}
+              {/* Valoración en estrellas dinámica */}
               <View style={styles.ratingRow}>
                 <View style={styles.starsGroup}>
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <Ionicons key={star} name="star" size={14} color="#1F232E" />
+                    <Ionicons
+                      key={star}
+                      name="star"
+                      size={14}
+                      color={totalReviewsCount > 0 && star <= Math.round(Number(averageRatingScore)) ? '#FBBF24' : '#E2E8F0'}
+                    />
                   ))}
                 </View>
-                <Text style={styles.ratingText}>5 (1)</Text>
+                <Text style={styles.ratingText}>
+                  {totalReviewsCount > 0 ? `${averageRatingScore} (${totalReviewsCount})` : 'Sin valoraciones'}
+                </Text>
               </View>
 
-              {/* Métricas: Ventas y Compras */}
-              <View style={styles.statsRow}>
+              {/* Métricas dinámicas: Ventas y Compras */}
+              <TouchableOpacity
+                style={styles.statsRow}
+                activeOpacity={0.7}
+                onPress={() => router.push('/compras' as any)}
+              >
                 <Ionicons name="bar-chart" size={14} color="#F43F5E" style={{ marginRight: 4 }} />
-                <Text style={styles.statNumber}>0</Text>
-                <Text style={styles.statLabel}>Ventas</Text>
+                <Text style={styles.statNumber}>{salesCount}</Text>
+                <Text style={styles.statLabel}>{salesCount === 1 ? 'Venta' : 'Ventas'}</Text>
 
                 <View style={styles.statDivider} />
 
-                <Text style={styles.statNumber}>1</Text>
-                <Text style={styles.statLabel}>Compra</Text>
-              </View>
+                <Text style={styles.statNumber}>{purchasesCount}</Text>
+                <Text style={styles.statLabel}>{purchasesCount === 1 ? 'Compra' : 'Compras'}</Text>
+              </TouchableOpacity>
 
               {/* Ubicación del usuario */}
               <View style={styles.locationRow}>
@@ -246,7 +368,7 @@ export default function PublicProfileScreen() {
               onPress={() => setActiveTab('valoraciones')}
               activeOpacity={0.75}
             >
-              <Text style={styles.tabNumber}>1</Text>
+              <Text style={styles.tabNumber}>{reviews.length}</Text>
               <Text style={[styles.tabLabel, activeTab === 'valoraciones' && styles.tabLabelActive]}>
                 Valoraciones
               </Text>
@@ -323,26 +445,20 @@ export default function PublicProfileScreen() {
             <View style={styles.valoracionesContainer}>
               {/* Tarjeta Principal de Resumen y Acciones */}
               <View style={styles.valoracionesCard}>
-                {/* 1. Resumen de Calificación y Barras de Distribución */}
+                {/* 1. Resumen de Calificación y Barras de Distribución Dinámicas */}
                 <View style={styles.ratingOverviewRow}>
                   {/* Calificación Promedio Izquierda */}
                   <View style={styles.ratingLeftCol}>
                     <View style={styles.ratingScoreRow}>
                       <Ionicons name="star" size={22} color="#1F232E" />
-                      <Text style={styles.ratingScoreNumber}>5</Text>
+                      <Text style={styles.ratingScoreNumber}>{averageRatingScore}</Text>
                     </View>
-                    <Text style={styles.ratingTotalCount}>(1)</Text>
+                    <Text style={styles.ratingTotalCount}>({totalReviewsCount})</Text>
                   </View>
 
                   {/* Barras de porcentaje por estrella Derecha */}
                   <View style={styles.ratingBarsCol}>
-                    {[
-                      { stars: 5, percent: 100 },
-                      { stars: 4, percent: 0 },
-                      { stars: 3, percent: 0 },
-                      { stars: 2, percent: 0 },
-                      { stars: 1, percent: 0 },
-                    ].map((row) => (
+                    {breakdownData.map((row) => (
                       <View key={row.stars} style={styles.breakdownRow}>
                         <Text style={styles.breakdownStarText}>{row.stars}</Text>
                         <View style={styles.breakdownTrack}>
@@ -384,56 +500,87 @@ export default function PublicProfileScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {/* 3. Ítem de Valoración (Detalle de la reseña con filtrado) */}
-                {((selectedRole && selectedRole !== 'comprador') || (selectedDelivery && selectedDelivery !== 'persona')) ? (
+                {/* 3. Lista de Valoraciones Reales o Estado Vacío */}
+                {totalReviewsCount === 0 ? (
                   <View style={styles.filteredEmptySection}>
-                    <Ionicons name="filter-circle-outline" size={40} color="#94A3B8" />
+                    <Ionicons name="star-outline" size={44} color="#94A3B8" />
+                    <Text style={styles.filteredEmptyTitle}>Aún no hay valoraciones</Text>
+                    <Text style={styles.filteredEmptySubtitle}>
+                      Las calificaciones de compras y ventas se mostrarán aquí cuando se completen transacciones.
+                    </Text>
+                  </View>
+                ) : displayedReviews.length === 0 ? (
+                  <View style={styles.filteredEmptySection}>
+                    <Ionicons name="filter-circle-outline" size={44} color="#94A3B8" />
                     <Text style={styles.filteredEmptyTitle}>No hay valoraciones</Text>
                     <Text style={styles.filteredEmptySubtitle}>
                       No se encontraron valoraciones que coincidan con los filtros seleccionados.
                     </Text>
                   </View>
                 ) : (
-                  <View style={styles.reviewItemSection}>
-                    {/* Encabezado: Avatar doodle y Datos del Comprador */}
-                    <View style={styles.reviewerHeaderRow}>
-                      <View style={styles.doodleAvatar}>
-                        <View style={styles.doodleFace}>
-                          <View style={styles.doodleEyesRow}>
-                            <View style={styles.doodleEye} />
-                            <View style={styles.doodleEye} />
-                          </View>
-                          <View style={styles.doodleMouth} />
+                  displayedReviews.map((rev) => (
+                    <View key={rev.id} style={styles.reviewItemSection}>
+                      {/* Encabezado: Avatar y Datos de la Contraparte */}
+                      <View style={styles.reviewerHeaderRow}>
+                        <View style={styles.reviewAvatarCircle}>
+                          <Text style={styles.reviewAvatarInitial}>
+                            {(rev.reviewer_name || 'U').charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+
+                        <View style={styles.reviewerInfoCol}>
+                          <Text style={styles.reviewerName}>{rev.reviewer_name || 'Usuario Soltapp'}</Text>
+                          <Text style={styles.reviewerTenure}>
+                            {rev.role === 'buyer' ? 'Comprador verificado' : 'Vendedor verificado'}
+                          </Text>
                         </View>
                       </View>
 
-                      <View style={styles.reviewerInfoCol}>
-                        <Text style={styles.reviewerName}>Jose H.</Text>
-                        <Text style={styles.reviewerTenure}>9 años en Soltapp</Text>
+                      {/* Estrellas y Fecha */}
+                      <View style={styles.reviewStarsDateRow}>
+                        <View style={styles.reviewStarsGroup}>
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Ionicons
+                              key={s}
+                              name="star"
+                              size={15}
+                              color={s <= rev.rating ? '#FBBF24' : '#E2E8F0'}
+                              style={{ marginRight: 2 }}
+                            />
+                          ))}
+                        </View>
+                        <Text style={styles.reviewDateText}>{formatReviewDate(rev.created_at)}</Text>
                       </View>
-                    </View>
 
-                    {/* Estrellas y Fecha */}
-                    <View style={styles.reviewStarsDateRow}>
-                      <View style={styles.reviewStarsGroup}>
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Ionicons key={s} name="star" size={15} color="#1F232E" style={{ marginRight: 2 }} />
-                        ))}
-                      </View>
-                      <Text style={styles.reviewDateText}>Hace 3 años</Text>
-                    </View>
+                      {/* Comentario escrito por el usuario */}
+                      {rev.comment ? (
+                        <Text style={styles.reviewCommentBodyText}>"{rev.comment}"</Text>
+                      ) : null}
 
-                    {/* Tarjeta Interna de Transacción / Producto */}
-                    <View style={styles.transactionCard}>
-                      <View style={styles.transactionIconWrapper}>
-                        <Ionicons name="bicycle-outline" size={24} color="#64748B" />
-                      </View>
-                      <View style={styles.transactionTextCol}>
-                        <Text style={styles.transactionTypeLabel}>Compraste en persona:</Text>
-                        <Text style={styles.transactionProductTitle}>Bicicletas</Text>
+                      {/* Tarjeta Interna de Transacción / Producto */}
+                      <View style={styles.transactionCard}>
+                        {rev.product_image ? (
+                          <Image
+                            source={{ uri: rev.product_image }}
+                            style={styles.transactionProductThumb}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.transactionIconWrapper}>
+                            <Ionicons name="cube-outline" size={22} color="#64748B" />
+                          </View>
+                        )}
+                        <View style={styles.transactionTextCol}>
+                          <Text style={styles.transactionTypeLabel}>
+                            {rev.role === 'buyer' ? 'Compró en persona:' : 'Vendió en persona:'}
+                          </Text>
+                          <Text style={styles.transactionProductTitle} numberOfLines={1}>
+                            {rev.product_title || 'Producto'}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
+                  ))
                 )}
               </View>
             </View>
@@ -1125,6 +1272,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+  },
+  reviewAvatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EEF2F6',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  reviewAvatarInitial: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  reviewCommentBodyText: {
+    fontSize: 14,
+    color: '#334155',
+    fontStyle: 'italic',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  transactionProductThumb: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: '#F1F5F9',
   },
   doodleAvatar: {
     width: 48,

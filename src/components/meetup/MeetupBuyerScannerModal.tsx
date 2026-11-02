@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { MeetupOrder } from '../../types/order.types';
 import { meetupOrderService } from '../../services/meetupOrderService';
@@ -37,6 +38,7 @@ export const MeetupBuyerScannerModal: React.FC<MeetupBuyerScannerModalProps> = (
   onOrderUpdated,
   onOpenIssueModal,
 }) => {
+  const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -61,24 +63,42 @@ export const MeetupBuyerScannerModal: React.FC<MeetupBuyerScannerModalProps> = (
     if (scanned || isValidating || success) return;
 
     setScanned(true);
-    let extractedToken = data;
+    let extractedToken = data.trim();
+    let scannedOrderId: string | undefined = undefined;
+    let scannedExpiresAt: string | undefined = undefined;
 
     try {
       const parsed = JSON.parse(data);
       if (parsed.token) {
-        extractedToken = parsed.token;
+        extractedToken = String(parsed.token).trim();
+      }
+      if (parsed.orderId) {
+        scannedOrderId = String(parsed.orderId).trim();
+      }
+      if (parsed.expiresAt) {
+        scannedExpiresAt = String(parsed.expiresAt).trim();
       }
     } catch {
-      // Data era un string de token directo
-      extractedToken = data;
+      extractedToken = data.trim();
     }
 
-    await validateToken(extractedToken);
+    await validateToken(extractedToken, scannedOrderId, scannedExpiresAt);
   };
 
-  const validateToken = async (tokenToVerify: string) => {
+  const validateToken = async (
+    tokenToVerify: string,
+    scannedOrderId?: string,
+    scannedExpiresAt?: string
+  ) => {
     if (!tokenToVerify || tokenToVerify.trim() === '') {
       setErrorMessage('Ingresa un código QR válido.');
+      setScanned(false);
+      return;
+    }
+
+    // Validación estricta: comprobar si el QR escaneado pertenece a otra orden
+    if (scannedOrderId && scannedOrderId !== order.id) {
+      setErrorMessage('Este código QR pertenece a otra compra o producto diferente. Escanea el código del vendedor para esta compra.');
       setScanned(false);
       return;
     }
@@ -87,7 +107,12 @@ export const MeetupBuyerScannerModal: React.FC<MeetupBuyerScannerModalProps> = (
       setIsValidating(true);
       setErrorMessage(null);
 
-      const result = await meetupOrderService.verifyMeetupQr(order.id, tokenToVerify.trim());
+      const result = await meetupOrderService.verifyMeetupQr(
+        order.id,
+        tokenToVerify.trim(),
+        scannedOrderId,
+        scannedExpiresAt
+      );
 
       setSuccess(true);
       onOrderUpdated({
@@ -157,6 +182,18 @@ export const MeetupBuyerScannerModal: React.FC<MeetupBuyerScannerModalProps> = (
 
               <TouchableOpacity style={styles.finishBtn} onPress={onClose}>
                 <Text style={styles.finishBtnText}>Entendido</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.homeBtn}
+                activeOpacity={0.8}
+                onPress={() => {
+                  onClose();
+                  router.replace('/home' as any);
+                }}
+              >
+                <Ionicons name="home-outline" size={16} color="#1F232E" style={{ marginRight: 6 }} />
+                <Text style={styles.homeBtnText}>Volver al Menú Principal</Text>
               </TouchableOpacity>
             </View>
           ) : errorMessage ? (
@@ -244,7 +281,16 @@ export const MeetupBuyerScannerModal: React.FC<MeetupBuyerScannerModalProps> = (
                   <TouchableOpacity
                     style={styles.submitManualBtn}
                     activeOpacity={0.85}
-                    onPress={() => validateToken(manualCode)}
+                    onPress={() => {
+                      let token = manualCode.trim();
+                      let scannedOrderId: string | undefined = undefined;
+                      try {
+                        const parsed = JSON.parse(manualCode);
+                        if (parsed.token) token = String(parsed.token).trim();
+                        if (parsed.orderId) scannedOrderId = String(parsed.orderId).trim();
+                      } catch {}
+                      validateToken(token, scannedOrderId);
+                    }}
                     disabled={!manualCode.trim()}
                   >
                     <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -565,6 +611,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
+  },
+  homeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 12,
+    borderRadius: 14,
+    width: '100%',
+    marginTop: 10,
+  },
+  homeBtnText: {
+    color: '#1F232E',
+    fontWeight: '700',
+    fontSize: 14,
   },
   errorWrapper: {
     alignItems: 'center',

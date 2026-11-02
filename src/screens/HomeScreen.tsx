@@ -60,7 +60,36 @@ const CATEGORIES = [
   { id: '5', name: 'Inmobilia\nria', IconComponent: InmobiliariaIcon },
 ];
 
-const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
+const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80';
+
+// Componente para renderizar la imagen de producto con fallback automático si la URL falla
+function ProductCardCover({
+  coverUrl,
+  fallbackUrl,
+  style,
+}: {
+  coverUrl: string;
+  fallbackUrl: string;
+  style: any;
+}) {
+  const [currentUri, setCurrentUri] = useState(coverUrl);
+
+  useEffect(() => {
+    setCurrentUri(coverUrl);
+  }, [coverUrl]);
+
+  return (
+    <Image
+      source={{ uri: currentUri }}
+      style={style}
+      onError={() => {
+        if (currentUri !== fallbackUrl) {
+          setCurrentUri(fallbackUrl);
+        }
+      }}
+    />
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -92,6 +121,37 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadProducts();
+
+    // Sincronización en tiempo real para remover productos vendidos del catálogo
+    let ch: any = null;
+    try {
+      ch = supabase
+        .channel('soltapp-home-sync')
+        .on('broadcast', { event: 'product_sold' }, () => {
+          loadProducts();
+        })
+        .on('broadcast', { event: 'new_meetup_order' }, () => {
+          loadProducts();
+        })
+        .subscribe();
+    } catch {}
+
+    const handleSold = () => {
+      loadProducts();
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('storage', handleSold);
+      window.addEventListener('soltapp_product_sold', handleSold);
+    }
+
+    return () => {
+      ch?.unsubscribe();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleSold);
+        window.removeEventListener('soltapp_product_sold', handleSold);
+      }
+    };
   }, [loadProducts]);
 
   useEffect(() => {
@@ -131,8 +191,19 @@ export default function HomeScreen() {
     if (text.includes('figura') || text.includes('twitch') || text.includes('league') || text.includes('lol') || text.includes('juego') || text.includes('anime')) {
       return 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&q=80';
     }
-    if (text.includes('iphone') || text.includes('celular') || text.includes('telefono') || text.includes('apple') || text.includes('samsung')) {
-      return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=600&q=80';
+    if (
+      text.includes('iphone') ||
+      text.includes('celular') ||
+      text.includes('telefono') ||
+      text.includes('apple') ||
+      text.includes('samsung') ||
+      text.includes('motorola') ||
+      text.includes('xiaomi') ||
+      text.includes('smartphone') ||
+      text.includes('tecnología') ||
+      text.includes('electronica')
+    ) {
+      return 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=600&q=80';
     }
     if (text.includes('auto') || text.includes('volkswagen') || text.includes('gol') || text.includes('vehiculo') || text.includes('coche')) {
       return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80';
@@ -258,12 +329,16 @@ export default function HomeScreen() {
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.addEventListener('storage', handleStorage);
+      window.addEventListener('soltapp_user_switched', handleStorage);
+      window.addEventListener('soltapp_data_reset', handleStorage);
     }
 
     return () => {
       isMounted = false;
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         window.removeEventListener('storage', handleStorage);
+        window.removeEventListener('soltapp_user_switched', handleStorage);
+        window.removeEventListener('soltapp_data_reset', handleStorage);
       }
     };
   }, []);
@@ -298,6 +373,7 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    await accountService.clearActiveUser();
     router.replace('/login' as any);
   };
 
@@ -332,43 +408,12 @@ export default function HomeScreen() {
     }
   };
 
-  const handlePressCompras = async () => {
-    const latest = await meetupOrderService.getLatestOrder('buyer', currentAccount.id);
-    if (latest) {
-      router.push({
-        pathname: '/order/[id]',
-        params: {
-          id: latest.id,
-          role: 'buyer',
-          title: latest.product?.title || 'Sillas (Switch)',
-          price: String(latest.product?.price || '$ 400'),
-          sellerName: latest.seller?.full_name || 'Vendedor',
-          imageUri: latest.product?.images?.[0] || '',
-        },
-      } as any);
-    } else {
-      router.push('/cart' as any);
-    }
+  const handlePressCompras = () => {
+    router.push('/compras' as any);
   };
 
-  const handlePressVentas = async () => {
-    const latest = await meetupOrderService.getLatestOrder('seller', currentAccount.id);
-    if (latest) {
-      router.push({
-        pathname: '/order/[id]',
-        params: {
-          id: latest.id,
-          role: 'seller',
-          title: latest.product?.title || 'Sillas (Switch)',
-          price: String(latest.product?.price || '$ 400'),
-          sellerName: latest.seller?.full_name || 'Tú (Vendedor)',
-          buyerName: latest.buyer?.full_name || 'Comprador',
-          imageUri: latest.product?.images?.[0] || '',
-        },
-      } as any);
-    } else {
-      setActiveTab('inbox');
-    }
+  const handlePressVentas = () => {
+    router.push({ pathname: '/compras', params: { tab: 'ventas' } } as any);
   };
 
   return (
@@ -679,6 +724,7 @@ export default function HomeScreen() {
                   {nearbyProducts.map((prod) => {
                     const isFav = favorites.includes(prod.id);
                     const coverUrl = getProductCoverImage(prod);
+                    const fallbackUrl = getContextualFallback(prod.title, prod.category?.name);
                     const formattedPrice = formatProductPrice(prod.price, prod.currency);
 
                     return (
@@ -689,7 +735,7 @@ export default function HomeScreen() {
                         onPress={() => handleProductPress(prod.id)}
                       >
                         <View style={styles.imageContainer}>
-                          <Image source={{ uri: coverUrl }} style={styles.productImage} />
+                          <ProductCardCover coverUrl={coverUrl} fallbackUrl={fallbackUrl} style={styles.productImage} />
                           <TouchableOpacity
                             style={styles.favoriteButton}
                             onPress={() => toggleFavorite(prod.id)}
@@ -731,6 +777,7 @@ export default function HomeScreen() {
                   {recentProducts.map((prod) => {
                     const isFav = favorites.includes(prod.id);
                     const coverUrl = getProductCoverImage(prod);
+                    const fallbackUrl = getContextualFallback(prod.title, prod.category?.name);
                     const formattedPrice = formatProductPrice(prod.price, prod.currency);
 
                     return (
@@ -741,7 +788,7 @@ export default function HomeScreen() {
                         onPress={() => handleProductPress(prod.id)}
                       >
                         <View style={styles.gridImageContainer}>
-                          <Image source={{ uri: coverUrl }} style={styles.productImage} />
+                          <ProductCardCover coverUrl={coverUrl} fallbackUrl={fallbackUrl} style={styles.productImage} />
                           <TouchableOpacity
                             style={styles.favoriteButton}
                             onPress={() => toggleFavorite(prod.id)}

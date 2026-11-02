@@ -17,6 +17,8 @@ import {
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { productService, ProductDetail, ProductListItem } from '../services';
+import { meetupOrderService } from '../services/meetupOrderService';
+import { SoltappReview } from '../types/order.types';
 
 // SVGs oficiales
 import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
@@ -30,7 +32,7 @@ import MailIcon from '../../assets/svgs/mail.svg';
 import AvatarIcon from '../../assets/svgs/Avatar.svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const DEFAULT_FALLBACK_IMG = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800&q=80';
+const DEFAULT_FALLBACK_IMG = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
 
 // Mock de valoraciones de vendedor para el diseño
 const MOCK_SELLER_REVIEWS = [
@@ -98,6 +100,21 @@ export default function ProductDetailScreen() {
   const [descExpanded, setDescExpanded] = useState<boolean>(true);
   const [detailsExpanded, setDetailsExpanded] = useState<boolean>(true);
   const [imageError, setImageError] = useState<boolean>(false);
+  const [sellerReviews, setSellerReviews] = useState<SoltappReview[]>([]);
+
+  useEffect(() => {
+    const targetSellerId = product?.seller_id || product?.seller?.id;
+    if (targetSellerId) {
+      meetupOrderService.getUserReviews(targetSellerId).then((revs) => {
+        setSellerReviews(revs);
+      });
+    }
+  }, [product?.seller_id, product?.seller?.id]);
+
+  const sellerRatingAvg = sellerReviews.length > 0
+    ? (sellerReviews.reduce((acc, r) => acc + (r.rating || 5), 0) / sellerReviews.length).toFixed(1)
+    : '5';
+  const sellerRatingCount = sellerReviews.length;
 
   // Carga del producto desde Supabase
   useEffect(() => {
@@ -143,8 +160,19 @@ export default function ProductDetailScreen() {
     if (text.includes('figura') || text.includes('twitch') || text.includes('league') || text.includes('lol') || text.includes('juego') || text.includes('anime')) {
       return 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&q=80';
     }
-    if (text.includes('iphone') || text.includes('celular') || text.includes('telefono') || text.includes('apple') || text.includes('samsung')) {
-      return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&q=80';
+    if (
+      text.includes('iphone') ||
+      text.includes('celular') ||
+      text.includes('telefono') ||
+      text.includes('apple') ||
+      text.includes('samsung') ||
+      text.includes('motorola') ||
+      text.includes('xiaomi') ||
+      text.includes('smartphone') ||
+      text.includes('tecnología') ||
+      text.includes('electronica')
+    ) {
+      return 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&q=80';
     }
     if (text.includes('auto') || text.includes('volkswagen') || text.includes('gol') || text.includes('vehiculo') || text.includes('coche')) {
       return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800&q=80';
@@ -292,8 +320,8 @@ export default function ProductDetailScreen() {
             <Image
               source={{
                 uri: imageError
-                  ? DEFAULT_FALLBACK_IMG
-                  : imagesList[currentImageIndex] || DEFAULT_FALLBACK_IMG,
+                  ? getContextualFallback(product?.title, product?.category?.name)
+                  : imagesList[currentImageIndex] || getContextualFallback(product?.title, product?.category?.name),
               }}
               style={styles.heroImage}
               resizeMode="cover"
@@ -336,27 +364,43 @@ export default function ProductDetailScreen() {
 
           {/* 5. Tarjeta del Vendedor (¿Quién realizó la publicación?) */}
           <View style={styles.sellerCard}>
-            <View style={styles.sellerAvatarWrapper}>
-              {sellerAvatar ? (
-                <Image source={{ uri: sellerAvatar }} style={styles.sellerAvatarImg} />
-              ) : (
-                <View style={styles.sellerAvatarPlaceholder}>
-                  <Text style={styles.sellerAvatarInitial}>{sellerInitial}</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.sellerInfoCol}>
-              <Text style={styles.sellerName}>{sellerName}</Text>
-              <View style={styles.sellerRatingRow}>
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <EstrellaIcon width={13} height={13} />
-                <Text style={styles.sellerRatingNumber}>5 (3)</Text>
+            <TouchableOpacity
+              style={styles.sellerCardTouchable}
+              activeOpacity={0.7}
+              onPress={() => {
+                router.push({
+                  pathname: '/public-profile',
+                  params: {
+                    userId: product?.seller_id || product?.seller?.id || '',
+                    userName: sellerName,
+                  },
+                } as any);
+              }}
+            >
+              <View style={styles.sellerAvatarWrapper}>
+                {sellerAvatar ? (
+                  <Image source={{ uri: sellerAvatar }} style={styles.sellerAvatarImg} />
+                ) : (
+                  <View style={styles.sellerAvatarPlaceholder}>
+                    <Text style={styles.sellerAvatarInitial}>{sellerInitial}</Text>
+                  </View>
+                )}
               </View>
-            </View>
+
+              <View style={styles.sellerInfoCol}>
+                <Text style={styles.sellerName}>{sellerName}</Text>
+                <View style={styles.sellerRatingRow}>
+                  <EstrellaIcon width={13} height={13} />
+                  <EstrellaIcon width={13} height={13} />
+                  <EstrellaIcon width={13} height={13} />
+                  <EstrellaIcon width={13} height={13} />
+                  <EstrellaIcon width={13} height={13} />
+                  <Text style={styles.sellerRatingNumber}>
+                    {sellerRatingCount > 0 ? `${sellerRatingAvg} (${sellerRatingCount})` : '5 (1)'}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.chatBtnOutline} onPress={handleOpenChat} activeOpacity={0.75}>
               <Text style={styles.chatBtnOutlineText}>Chat</Text>
@@ -464,34 +508,71 @@ export default function ProductDetailScreen() {
           <View style={styles.reviewsSection}>
             <View style={styles.reviewsHeaderRow}>
               <EstrellaIcon width={18} height={18} />
-              <Text style={styles.reviewsAverage}>5</Text>
-              <Text style={styles.reviewsSellerTitle}>{sellerName} valoraciones</Text>
+              <Text style={styles.reviewsAverage}>{sellerRatingAvg}</Text>
+              <Text style={styles.reviewsSellerTitle}>
+                {sellerName} valoraciones ({sellerRatingCount > 0 ? sellerRatingCount : MOCK_SELLER_REVIEWS.length})
+              </Text>
             </View>
 
             {/* Lista de valoraciones */}
             <View style={styles.reviewsList}>
-              {MOCK_SELLER_REVIEWS.map((rev) => (
-                <View key={rev.id} style={styles.reviewItem}>
-                  <View style={styles.reviewAuthorRow}>
-                    <View style={styles.reviewAvatar}>
-                      <Text style={styles.reviewAvatarText}>{rev.author.charAt(0)}</Text>
+              {sellerReviews.length > 0 ? (
+                sellerReviews.map((rev) => (
+                  <View key={rev.id} style={styles.reviewItem}>
+                    <View style={styles.reviewAuthorRow}>
+                      <View style={styles.reviewAvatar}>
+                        <Text style={styles.reviewAvatarText}>{(rev.reviewer_name || 'U').charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.reviewAuthorName}>{rev.reviewer_name || 'Comprador'}</Text>
+                        <Text style={styles.reviewDate}>Reciente</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={styles.reviewAuthorName}>{rev.author}</Text>
-                      <Text style={styles.reviewDate}>{rev.date}</Text>
+                    <View style={styles.reviewStarsRow}>
+                      {Array.from({ length: rev.rating || 5 }).map((_, sIdx) => (
+                        <EstrellaIcon key={sIdx} width={13} height={13} />
+                      ))}
                     </View>
+                    {rev.comment ? <Text style={styles.reviewComment}>"{rev.comment}"</Text> : null}
                   </View>
-                  <View style={styles.reviewStarsRow}>
-                    {Array.from({ length: rev.stars }).map((_, sIdx) => (
-                      <EstrellaIcon key={sIdx} width={13} height={13} />
-                    ))}
+                ))
+              ) : (
+                MOCK_SELLER_REVIEWS.map((rev) => (
+                  <View key={rev.id} style={styles.reviewItem}>
+                    <View style={styles.reviewAuthorRow}>
+                      <View style={styles.reviewAvatar}>
+                        <Text style={styles.reviewAvatarText}>{rev.author.charAt(0)}</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.reviewAuthorName}>{rev.author}</Text>
+                        <Text style={styles.reviewDate}>{rev.date}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.reviewStarsRow}>
+                      {Array.from({ length: rev.stars }).map((_, sIdx) => (
+                        <EstrellaIcon key={sIdx} width={13} height={13} />
+                      ))}
+                    </View>
+                    <Text style={styles.reviewComment}>{rev.comment}</Text>
                   </View>
-                  <Text style={styles.reviewComment}>{rev.comment}</Text>
-                </View>
-              ))}
+                ))
+              )}
             </View>
 
-            <TouchableOpacity style={styles.allReviewsBtn} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={styles.allReviewsBtn}
+              activeOpacity={0.75}
+              onPress={() => {
+                router.push({
+                  pathname: '/public-profile',
+                  params: {
+                    userId: product?.seller_id || product?.seller?.id || '',
+                    userName: sellerName,
+                    tab: 'valoraciones',
+                  },
+                } as any);
+              }}
+            >
               <Text style={styles.allReviewsBtnText}>Ver todas las valoraciones</Text>
             </TouchableOpacity>
           </View>
@@ -783,6 +864,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     backgroundColor: '#FFFFFF',
+    gap: 10,
+  },
+  sellerCardTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
     gap: 10,
   },
   sellerAvatarWrapper: {

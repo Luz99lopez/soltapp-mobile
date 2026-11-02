@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MeetupOrder, OrderStatus } from '../types/order.types';
 import { meetupOrderService } from '../services/meetupOrderService';
+import { accountService } from '../services/accountService';
 import { MeetupSellerQRModal } from '../components/meetup/MeetupSellerQRModal';
 import { MeetupBuyerScannerModal } from '../components/meetup/MeetupBuyerScannerModal';
 import { MeetupIssueModal } from '../components/meetup/MeetupIssueModal';
@@ -37,6 +38,8 @@ export const MeetupOrderScreen: React.FC = () => {
     title?: string;
     price?: string;
     sellerName?: string;
+    buyerName?: string;
+    sellerId?: string;
     imageUri?: string;
   }>();
 
@@ -66,6 +69,15 @@ export const MeetupOrderScreen: React.FC = () => {
       setOrder((prev) => {
         if (!prev) return null;
         const merged = { ...prev, ...updatedFields } as MeetupOrder;
+
+        // Si la entrega acaba de ser validada por el comprador, notificar al vendedor
+        if (updatedFields.status === 'DELIVERED' && prev.status === 'PENDING_MEETUP') {
+          Alert.alert(
+            '¡Entrega física validada!',
+            'El comprador escaneó tu código QR y confirmó la entrega en mano. Recibe el pago externo y presiona "Confirmar recepción del pago".'
+          );
+        }
+
         // Si acaba de completarse, abrir modal de review
         if (updatedFields.status === 'COMPLETED' && prev.status !== 'COMPLETED') {
           setTimeout(() => setShowReviewModal(true), 600);
@@ -82,34 +94,66 @@ export const MeetupOrderScreen: React.FC = () => {
   const loadOrder = async () => {
     try {
       setLoading(true);
+      const currentUser = await accountService.getCurrentUser();
       const data = await meetupOrderService.getOrderById(orderId);
-      
-      // Merge con params pasados desde CartScreen si faltan datos en el mock
-      const enrichedOrder: MeetupOrder = {
-        ...data,
-        product: {
-          id: data.product?.id || 'prod-default',
-          title: params.title || data.product?.title || 'Zelda Breath of the Wild (Switch)',
-          price: params.price || data.product?.price || '$25.000',
-          condition: data.product?.condition || 'Como nuevo',
-          images: params.imageUri ? [params.imageUri] : data.product?.images,
-        },
-        seller: {
-          id: data.seller?.id || 'seller-1',
-          full_name: params.sellerName || data.seller?.full_name || 'Carlos M.',
-        },
-        buyer: {
-          id: data.buyer?.id || 'buyer-1',
-          full_name: 'Tú (Comprador)',
-        },
-      };
 
-      setOrder(enrichedOrder);
+      let resolvedOrder: MeetupOrder;
 
-      // Si el usuario actual es el seller_id, ajustar el rol por defecto
-      const { data: authData } = await supabase.auth.getUser();
-      if (authData?.user && data.seller_id === authData.user.id) {
+      if (data) {
+        resolvedOrder = {
+          ...data,
+          product: {
+            id: data.product?.id || 'prod-default',
+            title: params.title || data.product?.title || 'Producto',
+            price: params.price || data.product?.price || '$0',
+            condition: data.product?.condition || 'Como nuevo',
+            images: params.imageUri ? [params.imageUri] : data.product?.images,
+          },
+          seller: {
+            id: data.seller?.id || data.seller_id || 'seller-1',
+            full_name: data.seller?.full_name || params.sellerName || 'Vendedor',
+          },
+          buyer: {
+            id: data.buyer?.id || data.buyer_id || 'buyer-1',
+            full_name: data.buyer?.full_name || 'Comprador',
+          },
+        };
+      } else {
+        const isUserBuyer = params.role === 'buyer';
+        resolvedOrder = {
+          id: orderId,
+          buyer_id: isUserBuyer ? currentUser.id : 'buyer-remote',
+          seller_id: isUserBuyer ? (params.sellerId || 'seller-remote') : currentUser.id,
+          status: 'PENDING_MEETUP',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          product: {
+            id: 'prod-fallback',
+            title: params.title || 'Producto',
+            price: params.price || '$0',
+            condition: 'Como nuevo',
+            images: params.imageUri ? [params.imageUri] : [],
+          },
+          seller: {
+            id: isUserBuyer ? (params.sellerId || 'seller-remote') : currentUser.id,
+            full_name: params.sellerName || (isUserBuyer ? 'Vendedor' : currentUser.fullName),
+          },
+          buyer: {
+            id: isUserBuyer ? currentUser.id : 'buyer-remote',
+            full_name: isUserBuyer ? currentUser.fullName : (params.buyerName || 'Comprador'),
+          },
+        };
+      }
+
+      setOrder(resolvedOrder);
+
+      // Determinar rol: respetar params.role si fue indicado explícitamente, o inferir por ID
+      if (params.role) {
+        setCurrentRole(params.role);
+      } else if (resolvedOrder.seller_id === currentUser.id) {
         setCurrentRole('seller');
+      } else if (resolvedOrder.buyer_id === currentUser.id) {
+        setCurrentRole('buyer');
       }
     } catch (err: any) {
       console.warn('Error cargando orden:', err.message);
@@ -407,9 +451,31 @@ export const MeetupOrderScreen: React.FC = () => {
               </View>
 
               {isBuyer ? (
-                <Text style={styles.deliveredBodyText}>
-                  Has validado la entrega correctamente. Ahora realiza el pago directamente al vendedor en mano. El vendedor confirmará en su app una vez recibido el dinero.
-                </Text>
+                <>
+                  <Text style={styles.deliveredBodyText}>
+                    Has validado la entrega correctamente. Si ya realizaste el pago en mano, ¡puedes calificar al vendedor para finalizar tu experiencia!
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.reviewCtaBtn}
+                    activeOpacity={0.85}
+                    onPress={() => setShowReviewModal(true)}
+                  >
+                    <Ionicons name="star" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.reviewCtaBtnText}>
+                      {order.buyer_reviewed ? 'Valoración enviada ✓ (Ver)' : 'Calificar al Vendedor'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Botón para volver al menú principal */}
+                  <TouchableOpacity
+                    style={styles.backToHomeBtn}
+                    activeOpacity={0.85}
+                    onPress={() => router.replace('/home' as any)}
+                  >
+                    <Ionicons name="home" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.backToHomeBtnText}>Volver al Menú Principal</Text>
+                  </TouchableOpacity>
+                </>
               ) : (
                 <>
                   <Text style={styles.deliveredBodyText}>
@@ -422,6 +488,17 @@ export const MeetupOrderScreen: React.FC = () => {
                   >
                     <Ionicons name="cash-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                     <Text style={styles.confirmPaymentCtaBtnText}>Confirmar recepción del pago</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.reviewCtaBtn, { marginTop: 10, backgroundColor: '#0D9488' }]}
+                    activeOpacity={0.85}
+                    onPress={() => setShowReviewModal(true)}
+                  >
+                    <Ionicons name="star" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.reviewCtaBtnText}>
+                      {order.seller_reviewed ? 'Valoración enviada ✓ (Ver)' : 'Calificar al Comprador'}
+                    </Text>
                   </TouchableOpacity>
                 </>
               )}
@@ -442,7 +519,37 @@ export const MeetupOrderScreen: React.FC = () => {
                 onPress={() => setShowReviewModal(true)}
               >
                 <Ionicons name="star" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.reviewCtaBtnText}>Dejar Valoración / Review</Text>
+                <Text style={styles.reviewCtaBtnText}>
+                  {isBuyer
+                    ? (order.buyer_reviewed ? 'Valoración enviada ✓ (Ver)' : 'Calificar al Vendedor')
+                    : (order.seller_reviewed ? 'Valoración enviada ✓ (Ver)' : 'Calificar al Comprador')}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Botón para volver al menú principal */}
+              <TouchableOpacity
+                style={styles.backToHomeBtn}
+                activeOpacity={0.85}
+                onPress={() => router.replace('/home' as any)}
+              >
+                <Ionicons name="home" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.backToHomeBtnText}>Volver al Menú Principal</Text>
+              </TouchableOpacity>
+
+              {/* Botón secundario para ver el historial de transacciones */}
+              <TouchableOpacity
+                style={styles.goToHistoryBtn}
+                activeOpacity={0.8}
+                onPress={() =>
+                  router.push(
+                    isBuyer ? '/compras' : ({ pathname: '/compras', params: { tab: 'ventas' } } as any)
+                  )
+                }
+              >
+                <Ionicons name="receipt-outline" size={16} color="#0D9488" style={{ marginRight: 6 }} />
+                <Text style={styles.goToHistoryBtnText}>
+                  {isBuyer ? 'Ver Mis Compras' : 'Ver Mis Ventas'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -480,7 +587,16 @@ export const MeetupOrderScreen: React.FC = () => {
         onClose={() => setShowReviewModal(false)}
         onSuccess={() => {
           setShowReviewModal(false);
-          router.replace('/home' as any);
+          setOrder((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'COMPLETED',
+                  buyer_reviewed: isBuyer ? true : prev.buyer_reviewed,
+                  seller_reviewed: !isBuyer ? true : prev.seller_reviewed,
+                }
+              : null
+          );
         }}
       />
     </SafeAreaView>
@@ -916,5 +1032,37 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
+  },
+  backToHomeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1F232E',
+    paddingVertical: 14,
+    borderRadius: 14,
+    width: '100%',
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  backToHomeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  goToHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  goToHistoryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0D9488',
   },
 });
