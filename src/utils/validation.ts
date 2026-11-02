@@ -6,6 +6,8 @@ import { z } from 'zod';
  * - Alta de producto (UploadProductView).
  * - Carrito y Compra (CartScreen).
  *
+ * Copian las reglas que hoy están escritas dentro de las pantallas (no las corrigen):
+ * si una pantalla tiene un error, el test lo debe mostrar.
  * No usan nada de React Native, así que se prueban directo con Jest.
  */
 
@@ -169,6 +171,11 @@ export const PRODUCT_MESSAGES = {
   condicionInvalida: 'El estado del producto no es válido.',
 } as const;
 
+/**
+ * Convierte el texto del campo "Precio" IGUAL que UploadProductView:
+ * parseFloat(price.replace(/[^0-9.]/g, '')). Quita el signo "-" y la coma.
+ * No se cambia a propósito: así los tests prueban lo que hace la app de verdad.
+ */
 export function parsePrecio(texto: string): number {
   return parseFloat(texto.replace(/[^0-9.]/g, ''));
 }
@@ -246,5 +253,82 @@ export const cartValidationSchema = z
     
     if (tieneSignoNegativo || Number.isNaN(precio) || precio < 0) {
       ctx.addIssue({ code: 'custom', path: ['price'], message: 'El precio debe ser un número no negativo.' });
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// Compra (CartScreen)
+// ---------------------------------------------------------------------------
+
+export const PAYMENT_METHODS = ['efectivo', 'qr_soltapp'] as const;
+
+export const PURCHASE_MESSAGES = {
+  sinSesion: 'Debes iniciar sesión para comprar.',
+  sinProducto: 'No se pudo identificar el producto.',
+  sinVendedor: 'No se pudo identificar al vendedor.',
+  precioInvalido: 'El precio del producto no es válido.',
+  pagoInvalido: 'El método de pago no es válido.',
+  autocompra: 'No puedes comprar tu propio producto.',
+} as const;
+
+/**
+ * Subtotal que muestra CartScreen (copia exacta):
+ * price.startsWith('$') ? price : `$${price}`. El total es igual al subtotal.
+ */
+export function formatSubtotal(price: string): string {
+  return price.startsWith('$') ? price : `$${price}`;
+}
+
+/**
+ * Lee un precio escrito como se muestra en la app ("$25.000", "25000", "$1.500,50"):
+ * punto para los miles y coma para los decimales. Devuelve NaN si no se entiende
+ * o si es negativo.
+ */
+export function parsePrecioMostrado(texto: string): number {
+  const t = texto.trim();
+  const conMiles = /^\$?\s*\d{1,3}(\.\d{3})+(,\d{1,2})?$/;
+  const simple = /^\$?\s*\d+(,\d{1,2})?$/;
+  if (!conMiles.test(t) && !simple.test(t)) return NaN;
+  return parseFloat(t.replace(/[$\s.]/g, '').replace(',', '.'));
+}
+
+/**
+ * PROPUESTA: la pantalla CartScreen hoy no valida nada antes de crear la orden.
+ * Este esquema define lo mínimo que debería cumplirse al confirmar el trato:
+ * 1) comprador con sesión  2) producto  3) vendedor  4) precio mayor a 0
+ * 5) método de pago válido  6) comprador distinto del vendedor.
+ */
+export const purchaseSchema = z
+  .object({
+    buyerId: z.string(),
+    productId: z.string(),
+    sellerId: z.string(),
+    price: z.string(),
+    paymentMethod: z.string(),
+  })
+  .superRefine((valores, ctx) => {
+    if (!valores.buyerId.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['buyerId'], message: PURCHASE_MESSAGES.sinSesion });
+      return;
+    }
+    if (!valores.productId.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['productId'], message: PURCHASE_MESSAGES.sinProducto });
+      return;
+    }
+    if (!valores.sellerId.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['sellerId'], message: PURCHASE_MESSAGES.sinVendedor });
+      return;
+    }
+    const precio = parsePrecioMostrado(valores.price);
+    if (Number.isNaN(precio) || precio <= 0) {
+      ctx.addIssue({ code: 'custom', path: ['price'], message: PURCHASE_MESSAGES.precioInvalido });
+      return;
+    }
+    if (!(PAYMENT_METHODS as readonly string[]).includes(valores.paymentMethod)) {
+      ctx.addIssue({ code: 'custom', path: ['paymentMethod'], message: PURCHASE_MESSAGES.pagoInvalido });
+      return;
+    }
+    if (valores.buyerId === valores.sellerId) {
+      ctx.addIssue({ code: 'custom', path: ['sellerId'], message: PURCHASE_MESSAGES.autocompra });
     }
   });
