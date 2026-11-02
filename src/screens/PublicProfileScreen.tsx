@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../supabase';
 import CategoriesMenuModal from '../components/CategoriesMenuModal';
 import EmptyShelfIllustration from '../components/EmptyShelfIllustration';
@@ -23,6 +23,12 @@ import BottomNavbar from '../components/BottomNavbar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TopNavbar from '../components/TopNavbar';
 import InteractiveLocationMap, { LocationCoordinates, DEFAULT_COORDINATES } from '../components/InteractiveLocationMap';
+import { StarRating } from '../components/ratings/StarRating';
+import { UserRatingModal } from '../components/ratings/UserRatingModal';
+import { ratingService } from '../services/ratingService';
+import { userService } from '../services/userService';
+import { PRESET_USERS } from '../services/accountService';
+import { RatingSummary, UserRating, RatingEligibility } from '../types/rating.types';
 
 
 const PRIMARY_COLOR = '#3BD7C2';
@@ -30,6 +36,24 @@ const TEXT_DARK = '#1F232E';
 
 export default function PublicProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ userId?: string }>();
+  const [targetUserId, setTargetUserId] = useState<string>('');
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary>({
+    target_user_id: '',
+    total_ratings: 0,
+    average_rating: 0,
+    distribution: {
+      5: { count: 0, percent: 0 },
+      4: { count: 0, percent: 0 },
+      3: { count: 0, percent: 0 },
+      2: { count: 0, percent: 0 },
+      1: { count: 0, percent: 0 },
+    },
+  });
+  const [ratingsList, setRatingsList] = useState<UserRating[]>([]);
+  const [loadingRatings, setLoadingRatings] = useState<boolean>(true);
+  const [ratingEligibility, setRatingEligibility] = useState<RatingEligibility | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'en_venta' | 'valoraciones' | 'info'>('en_venta');
   const [categoriesModalVisible, setCategoriesModalVisible] = useState(false);
@@ -49,28 +73,57 @@ export default function PublicProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    const setupProfile = async (authSessionUser: any) => {
+      const targetId = params?.userId || authSessionUser?.id || '122230dc-4ee3-407a-a32d-07a538b32212';
+      setTargetUserId(targetId);
+
+      if (params?.userId && params.userId !== authSessionUser?.id) {
+        const preset = PRESET_USERS.find((p) => p.id === params.userId);
+        if (preset) {
+          setDisplayName(preset.fullName);
+          setLocationText(preset.location);
+          setAvatarUrl(preset.avatarUrl || null);
+        }
+        try {
+          const profile = await userService.getProfile(params.userId);
+          if (profile) {
+            setDisplayName(profile.full_name || profile.username || 'Usuario de Soltapp');
+            if (profile.avatar_url) setAvatarUrl(profile.avatar_url);
+          }
+        } catch (_) {}
+      } else if (authSessionUser) {
+        extractProfileData(authSessionUser);
+      } else {
+        const preset = PRESET_USERS.find((p) => p.id === targetId);
+        if (preset) {
+          setDisplayName(preset.fullName);
+          setLocationText(preset.location);
+          setAvatarUrl(preset.avatarUrl || null);
+        }
+      }
+
+      loadUserProducts(targetId);
+      loadRatingsData(targetId);
+    };
+
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setCurrentUser(user);
-        extractProfileData(user);
-        loadUserProducts(user.id);
       } else {
         setLoadingProducts(false);
       }
+      setupProfile(user);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setCurrentUser(session?.user ?? null);
-      if (session?.user) {
-        extractProfileData(session.user);
-        loadUserProducts(session.user.id);
-      }
+      setupProfile(session?.user);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [params?.userId]);
 
   const extractProfileData = (user: any) => {
     const meta = user?.user_metadata || {};
@@ -117,6 +170,45 @@ export default function PublicProfileScreen() {
     } finally {
       setLoadingProducts(false);
     }
+  };
+
+  const loadRatingsData = async (targetId: string) => {
+    if (!targetId) return;
+    try {
+      setLoadingRatings(true);
+      const [summary, paginated, eligibility] = await Promise.all([
+        ratingService.getUserRatingSummary(targetId),
+        ratingService.getUserRatingsPaginated(targetId, 1, 20),
+        ratingService.canRateUser(targetId),
+      ]);
+      setRatingSummary(summary);
+      setRatingsList(paginated.items || []);
+      setRatingEligibility(eligibility);
+    } catch (e) {
+      console.warn('Error al cargar valoraciones:', e);
+    } finally {
+      setLoadingRatings(false);
+    }
+  };
+
+  const handleOpenRatingModal = () => {
+    if (!currentUser) {
+      Alert.alert('Inicia sesión', 'Debes iniciar sesión para calificar a este usuario.', [
+        { text: 'Ir a Iniciar Sesión', onPress: () => router.push('/login') },
+        { text: 'Cancelar', style: 'cancel' },
+      ]);
+      return;
+    }
+
+    if (ratingEligibility && !ratingEligibility.can_rate) {
+      Alert.alert(
+        'Calificación no disponible',
+        ratingEligibility.reason || 'Solo puedes calificar si han completado una compra o venta.'
+      );
+      return;
+    }
+
+    setShowRatingModal(true);
   };
 
   const handleResetFilters = () => {
@@ -189,10 +281,10 @@ export default function PublicProfileScreen() {
               <View style={styles.ratingRow}>
                 <View style={styles.starsGroup}>
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <Ionicons key={star} name="star" size={14} color="#1F232E" />
+                    <Ionicons key={star} name={star <= Math.round(ratingSummary.average_rating) ? "star" : "star-outline"} size={14} color="#D97706" />
                   ))}
                 </View>
-                <Text style={styles.ratingText}>5 (1)</Text>
+                <Text style={styles.ratingText}>{ratingSummary.average_rating > 0 ? ratingSummary.average_rating.toFixed(1) : '-'} ({ratingSummary.total_ratings})</Text>
               </View>
 
               {/* Métricas: Ventas y Compras */}
@@ -246,7 +338,7 @@ export default function PublicProfileScreen() {
               onPress={() => setActiveTab('valoraciones')}
               activeOpacity={0.75}
             >
-              <Text style={styles.tabNumber}>1</Text>
+              <Text style={styles.tabNumber}>{ratingSummary.total_ratings}</Text>
               <Text style={[styles.tabLabel, activeTab === 'valoraciones' && styles.tabLabelActive]}>
                 Valoraciones
               </Text>
@@ -328,20 +420,22 @@ export default function PublicProfileScreen() {
                   {/* Calificación Promedio Izquierda */}
                   <View style={styles.ratingLeftCol}>
                     <View style={styles.ratingScoreRow}>
-                      <Ionicons name="star" size={22} color="#1F232E" />
-                      <Text style={styles.ratingScoreNumber}>5</Text>
+                      <Ionicons name="star" size={22} color="#D97706" />
+                      <Text style={styles.ratingScoreNumber}>
+                        {ratingSummary.average_rating > 0 ? ratingSummary.average_rating.toFixed(1) : '-'}
+                      </Text>
                     </View>
-                    <Text style={styles.ratingTotalCount}>(1)</Text>
+                    <Text style={styles.ratingTotalCount}>({ratingSummary.total_ratings})</Text>
                   </View>
 
                   {/* Barras de porcentaje por estrella Derecha */}
                   <View style={styles.ratingBarsCol}>
                     {[
-                      { stars: 5, percent: 100 },
-                      { stars: 4, percent: 0 },
-                      { stars: 3, percent: 0 },
-                      { stars: 2, percent: 0 },
-                      { stars: 1, percent: 0 },
+                      { stars: 5, percent: ratingSummary.distribution[5]?.percent || 0 },
+                      { stars: 4, percent: ratingSummary.distribution[4]?.percent || 0 },
+                      { stars: 3, percent: ratingSummary.distribution[3]?.percent || 0 },
+                      { stars: 2, percent: ratingSummary.distribution[2]?.percent || 0 },
+                      { stars: 1, percent: ratingSummary.distribution[1]?.percent || 0 },
                     ].map((row) => (
                       <View key={row.stars} style={styles.breakdownRow}>
                         <Text style={styles.breakdownStarText}>{row.stars}</Text>
@@ -360,6 +454,36 @@ export default function PublicProfileScreen() {
                     ))}
                   </View>
                 </View>
+
+                {/* Botón para Calificar Usuario / Modificar Valoración */}
+                {currentUser && targetUserId !== currentUser.id && (
+                  <View style={styles.rateActionSection}>
+                    <TouchableOpacity
+                      style={styles.rateUserButton}
+                      onPress={handleOpenRatingModal}
+                      activeOpacity={0.8}
+                      accessibilityLabel="Calificar o modificar valoración a este usuario"
+                      accessibilityRole="button"
+                    >
+                      <Ionicons
+                        name={ratingEligibility?.has_rated_before ? 'create-outline' : 'star'}
+                        size={18}
+                        color="#FFFFFF"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={styles.rateUserButtonText}>
+                        {ratingEligibility?.has_rated_before
+                          ? 'Modificar mi valoración'
+                          : 'Valorar a este usuario'}
+                      </Text>
+                    </TouchableOpacity>
+                    {ratingEligibility && !ratingEligibility.can_rate && (
+                      <Text style={styles.rateEligibilityNote}>
+                        ℹ️ {ratingEligibility.reason}
+                      </Text>
+                    )}
+                  </View>
+                )}
 
                 {/* 2. Barra de Acciones: Filtros | Ordenar */}
                 <View style={styles.filterSortRow}>
@@ -384,55 +508,59 @@ export default function PublicProfileScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {/* 3. Ítem de Valoración (Detalle de la reseña con filtrado) */}
-                {((selectedRole && selectedRole !== 'comprador') || (selectedDelivery && selectedDelivery !== 'persona')) ? (
+                {/* 3. Lista de Valoraciones */}
+                {loadingRatings ? (
+                  <View style={{ padding: 28, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+                    <Text style={{ marginTop: 8, color: '#64748B', fontSize: 13 }}>Cargando valoraciones...</Text>
+                  </View>
+                ) : ratingsList.length === 0 ? (
                   <View style={styles.filteredEmptySection}>
-                    <Ionicons name="filter-circle-outline" size={40} color="#94A3B8" />
-                    <Text style={styles.filteredEmptyTitle}>No hay valoraciones</Text>
+                    <Ionicons name="chatbox-ellipses-outline" size={42} color="#94A3B8" />
+                    <Text style={styles.filteredEmptyTitle}>Sin valoraciones todavía</Text>
                     <Text style={styles.filteredEmptySubtitle}>
-                      No se encontraron valoraciones que coincidan con los filtros seleccionados.
+                      Este usuario aún no tiene valoraciones registradas. Las calificaciones aparecerán aquí cuando se completen transacciones.
                     </Text>
                   </View>
                 ) : (
-                  <View style={styles.reviewItemSection}>
-                    {/* Encabezado: Avatar doodle y Datos del Comprador */}
-                    <View style={styles.reviewerHeaderRow}>
-                      <View style={styles.doodleAvatar}>
-                        <View style={styles.doodleFace}>
-                          <View style={styles.doodleEyesRow}>
-                            <View style={styles.doodleEye} />
-                            <View style={styles.doodleEye} />
+                  <View>
+                    {ratingsList.map((review) => (
+                      <View key={review.id} style={styles.reviewItemSection}>
+                        {/* Encabezado: Avatar y Nombre */}
+                        <View style={styles.reviewerHeaderRow}>
+                          <View style={styles.doodleAvatar}>
+                            {review.reviewer?.avatar_url ? (
+                              <Image source={{ uri: review.reviewer.avatar_url }} style={styles.reviewerAvatarImg} />
+                            ) : (
+                              <View style={styles.doodleFace}>
+                                <Text style={{ fontWeight: '700', color: TEXT_DARK, fontSize: 15 }}>
+                                  {(review.reviewer?.full_name || 'U').charAt(0).toUpperCase()}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                          <View style={styles.doodleMouth} />
+
+                          <View style={styles.reviewerInfoCol}>
+                            <Text style={styles.reviewerName}>
+                              {review.reviewer?.full_name || 'Usuario de Soltapp'}
+                            </Text>
+                            <Text style={styles.reviewerTenure}>
+                              {new Date(review.created_at).toLocaleDateString()}
+                            </Text>
+                          </View>
                         </View>
-                      </View>
 
-                      <View style={styles.reviewerInfoCol}>
-                        <Text style={styles.reviewerName}>Jose H.</Text>
-                        <Text style={styles.reviewerTenure}>9 años en Soltapp</Text>
-                      </View>
-                    </View>
+                        {/* Estrellas */}
+                        <View style={styles.reviewStarsDateRow}>
+                          <StarRating value={review.rating} readOnly size={15} spacing={2} />
+                        </View>
 
-                    {/* Estrellas y Fecha */}
-                    <View style={styles.reviewStarsDateRow}>
-                      <View style={styles.reviewStarsGroup}>
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Ionicons key={s} name="star" size={15} color="#1F232E" style={{ marginRight: 2 }} />
-                        ))}
+                        {/* Comentario */}
+                        {review.comment ? (
+                          <Text style={styles.reviewCommentText}>{review.comment}</Text>
+                        ) : null}
                       </View>
-                      <Text style={styles.reviewDateText}>Hace 3 años</Text>
-                    </View>
-
-                    {/* Tarjeta Interna de Transacción / Producto */}
-                    <View style={styles.transactionCard}>
-                      <View style={styles.transactionIconWrapper}>
-                        <Ionicons name="bicycle-outline" size={24} color="#64748B" />
-                      </View>
-                      <View style={styles.transactionTextCol}>
-                        <Text style={styles.transactionTypeLabel}>Compraste en persona:</Text>
-                        <Text style={styles.transactionProductTitle}>Bicicletas</Text>
-                      </View>
-                    </View>
+                    ))}
                   </View>
                 )}
               </View>
@@ -768,12 +896,77 @@ export default function PublicProfileScreen() {
           onClose={() => setCategoriesModalVisible(false)}
           onSelectCategory={() => setCategoriesModalVisible(false)}
         />
+        {/* Modal para Calificar / Modificar Valoración */}
+        <UserRatingModal
+          visible={showRatingModal}
+          targetUserId={targetUserId}
+          targetUserName={displayName}
+          existingRating={
+            ratingEligibility?.existing_rating
+              ? {
+                  id: 'existing',
+                  reviewer_id: currentUser?.id,
+                  target_user_id: targetUserId,
+                  rating: ratingEligibility.existing_rating.rating,
+                  comment: ratingEligibility.existing_rating.comment,
+                  created_at: ratingEligibility.existing_rating.updated_at,
+                  updated_at: ratingEligibility.existing_rating.updated_at,
+                }
+              : null
+          }
+          onClose={() => setShowRatingModal(false)}
+          onSuccess={() => loadRatingsData(targetUserId)}
+        />
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  rateActionSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  rateUserButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PRIMARY_COLOR,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: PRIMARY_COLOR,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  rateUserButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  rateEligibilityNote: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  reviewCommentText: {
+    fontSize: 13.5,
+    color: '#334155',
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  reviewerAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
