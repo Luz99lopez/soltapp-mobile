@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { meetupOrderService } from '../services/meetupOrderService';
+import { accountService } from '../services/accountService';
 import { supabase } from '../supabase';
 import { ActivityIndicator } from 'react-native';
 
@@ -52,6 +53,8 @@ export default function CartScreen() {
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
   const [createdOrderId, setCreatedOrderId] = useState<string>('meetup-demo-1');
+  const [createdSellerId, setCreatedSellerId] = useState<string>(params.sellerId || '');
+  const [createdSellerName, setCreatedSellerName] = useState<string>(sellerName);
 
   // Cálculos de resumen
   const subtotalText = price.startsWith('$') ? price : `$${price}`;
@@ -60,19 +63,58 @@ export default function CartScreen() {
   const handleConfirmPurchase = async () => {
     try {
       setIsCreatingOrder(true);
-      const { data: authData } = await supabase.auth.getUser();
-      const currentBuyerName =
-        authData?.user?.user_metadata?.full_name ||
-        authData?.user?.user_metadata?.name ||
-        'Manuel Sans';
+      const currentUser = await accountService.getCurrentUser();
+      const currentBuyerName = currentUser.fullName || currentUser.username || 'Comprador';
+
+      // 1. Resolver el vendedor real del producto
+      let targetSellerId = params.sellerId;
+      let targetSellerName = sellerName;
+
+      // Si no viene sellerId, verificar si el producto existe o si es "Sillas" de yassvica
+      if (!targetSellerId || targetSellerId === 'seller-yassvica') {
+        if (params.productId) {
+          try {
+            const { data: pData } = await supabase
+              .from('products')
+              .select('seller_id, seller:users(full_name)')
+              .eq('id', params.productId)
+              .maybeSingle();
+            if (pData?.seller_id) {
+              targetSellerId = pData.seller_id;
+              if ((pData as any)?.seller?.full_name) {
+                targetSellerName = (pData as any).seller.full_name;
+              }
+            }
+          } catch {}
+        }
+
+        if (!targetSellerId) {
+          // Fallback a yassvica si el producto es Sillas
+          targetSellerId = '122230dc-4ee3-407a-a32d-07a538b32212';
+          targetSellerName = 'yassvica';
+        }
+      }
+
+      // 2. Prevenir auto-compra: el vendedor no puede comprarse a sí mismo
+      if (currentUser.id === targetSellerId) {
+        Alert.alert(
+          'Acción no permitida',
+          `No puedes comprar tu propia publicación. Actualmente estás navegando como "${currentUser.fullName}".\n\nPara probar la compra de "${title}", cambia a la cuenta del comprador (Kike Sanabria).`
+        );
+        setIsCreatingOrder(false);
+        return;
+      }
+
+      setCreatedSellerId(targetSellerId);
+      setCreatedSellerName(targetSellerName);
 
       const newOrder = await meetupOrderService.createMeetupOrder(
         params.productId,
-        params.sellerId,
+        targetSellerId,
         {
           title,
           price,
-          sellerName,
+          sellerName: targetSellerName,
           buyerName: currentBuyerName,
           imageUri: imageUri || '',
         }
@@ -98,8 +140,8 @@ export default function CartScreen() {
         role: 'buyer',
         title,
         price,
-        sellerName,
-        sellerId: params.sellerId || '',
+        sellerName: createdSellerName || sellerName,
+        sellerId: createdSellerId || params.sellerId || '',
         imageUri: imageUri || '',
       },
     } as any);
@@ -290,7 +332,7 @@ export default function CartScreen() {
             <Text style={styles.modalTitle}>¡Trato confirmado!</Text>
 
             <Text style={styles.modalMessage}>
-              `Has acordado encontrarte con ${sellerName} para revisar el producto y pagar en efectivo o transferencia externa directa. Recuerden coordinar un punto público y seguro para realizar el encuentro.`
+              Has acordado encontrarte con {sellerName} para revisar el producto y pagar en efectivo o transferencia externa directa. Recuerden coordinar un punto público y seguro para realizar el encuentro.
             </Text>
 
             <TouchableOpacity
@@ -303,7 +345,7 @@ export default function CartScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalSecondaryBtn, { backgroundColor: '#F3F4F6', borderWidth: 0, marginTop: 10 }]}
+              style={[styles.modalSecondaryBtn, { backgroundColor: '#F3F4F6', borderWidth: 0, marginTop: 4, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 24, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}
               activeOpacity={0.85}
               onPress={handleGoToChat}
             >
@@ -312,11 +354,12 @@ export default function CartScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalSecondaryBtn, { marginTop: 8 }]}
-              activeOpacity={0.7}
+              style={styles.modalHomeBtn}
+              activeOpacity={0.85}
               onPress={handleGoHome}
             >
-              <Text style={styles.modalSecondaryBtnText}>Volver a Inicio</Text>
+              <Ionicons name="home-outline" size={18} color="#1F232E" style={{ marginRight: 8 }} />
+              <Text style={styles.modalHomeBtnText}>Volver al Menú Principal</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -687,5 +730,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#64748B',
+  },
+  modalHomeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  modalHomeBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F232E',
   },
 });

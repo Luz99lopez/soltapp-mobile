@@ -60,7 +60,7 @@ const FALLBACK_CATEGORIES = [
   { id: 19, name: 'Otros' },
 ];
 
-const DEFAULT_PRODUCT_FALLBACK = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
+const DEFAULT_PRODUCT_FALLBACK = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80';
 
 interface UploadProductViewProps {
   onProductCreated?: () => void;
@@ -211,11 +211,18 @@ export default function UploadProductView({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
         quality: 0.8,
+        base64: true,
         selectionLimit: 10 - photos.length,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedUris = result.assets.map((asset) => asset.uri);
+        const selectedUris = result.assets.map((asset) => {
+          if (asset.base64) {
+            const mime = asset.mimeType || 'image/jpeg';
+            return `data:${mime};base64,${asset.base64}`;
+          }
+          return asset.uri;
+        });
         setPhotos((prev) => [...prev, ...selectedUris].slice(0, 10));
       }
     } catch (err: any) {

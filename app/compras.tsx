@@ -1,6 +1,6 @@
 import React from 'react';
-import CartScreen from '@/src/screens/CartScreen';
+import { PurchasesHistoryScreen } from '@/src/screens/PurchasesHistoryScreen';
 
 export default function ComprasRoute() {
-  return <CartScreen />;
+  return <PurchasesHistoryScreen />;
 }

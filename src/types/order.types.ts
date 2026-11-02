@@ -18,6 +18,12 @@ export interface MeetupOrder {
   completed_at?: string | null;
   created_at: string;
   updated_at: string;
+  buyer_reviewed?: boolean;
+  buyer_rating?: number;
+  buyer_comment?: string;
+  seller_reviewed?: boolean;
+  seller_rating?: number;
+  seller_comment?: string;
   product?: {
     id: string;
     title: string;
@@ -35,6 +41,22 @@ export interface MeetupOrder {
     full_name?: string | null;
     avatar_url?: string | null;
   } | null;
+}
+
+export interface SoltappReview {
+  id: string;
+  order_id: string;
+  reviewer_id: string;
+  reviewer_name: string;
+  reviewed_user_id: string;
+  reviewed_user_name: string;
+  role: 'buyer' | 'seller';
+  rating: number;
+  comment: string;
+  product_id?: string | null;
+  product_title?: string;
+  product_image?: string | null;
+  created_at: string;
 }
 
 export interface QRGenerationResult {

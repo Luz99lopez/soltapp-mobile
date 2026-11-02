@@ -44,6 +44,29 @@ export const MeetupSellerQRModal: React.FC<MeetupSellerQRModalProps> = ({
   const [isExpired, setIsExpired] = useState<boolean>(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const prevStatusRef = useRef(order.status);
+
+  // Notificar al vendedor de inmediato si la orden cambia a DELIVERED
+  useEffect(() => {
+    if (prevStatusRef.current === 'PENDING_MEETUP' && order.status === 'DELIVERED') {
+      Alert.alert(
+        '¡Entrega física validada!',
+        'El comprador escaneó tu código QR y confirmó la recepción física del producto. Verifica recibir el pago externo y confirma aquí abajo.'
+      );
+    }
+    prevStatusRef.current = order.status;
+  }, [order.status]);
+
+  // Suscripción directa del modal para actualizar UI instantáneamente
+  useEffect(() => {
+    if (!visible || !order.id) return;
+    const unsubscribe = meetupOrderService.subscribeToOrder(order.id, (updatedFields) => {
+      if (updatedFields.status && updatedFields.status !== order.status) {
+        onOrderUpdated({ ...order, ...updatedFields } as MeetupOrder);
+      }
+    });
+    return () => unsubscribe();
+  }, [visible, order.id, order.status]);
 
   // Sincronizar con props de la orden
   useEffect(() => {
@@ -133,6 +156,7 @@ export const MeetupSellerQRModal: React.FC<MeetupSellerQRModalProps> = ({
     try {
       setIsConfirmingPayment(true);
       const result = await meetupOrderService.confirmPaymentReceived(order.id);
+      onClose();
       Alert.alert('¡Excelente!', 'Has confirmado la recepción del pago. La venta ha finalizado con éxito.');
       onOrderUpdated({
         ...order,
@@ -156,7 +180,9 @@ export const MeetupSellerQRModal: React.FC<MeetupSellerQRModalProps> = ({
   const qrPayload = JSON.stringify({
     soltapp: true,
     orderId: order.id,
+    productId: order.product_id || order.product?.id || '',
     token: token || '',
+    expiresAt: expiresAt || '',
   });
 
   const isDelivered = order.status === 'DELIVERED';

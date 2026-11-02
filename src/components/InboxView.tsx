@@ -3,6 +3,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Alert,
   TouchableOpacity,
   ScrollView,
   Image,
@@ -71,6 +72,8 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.addEventListener('storage', handleStorage);
+      window.addEventListener('soltapp_user_switched', loadInbox);
+      window.addEventListener('soltapp_data_reset', loadInbox);
     }
 
     const interval = setInterval(loadInbox, 1500);
@@ -79,10 +82,19 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
       isMounted = false;
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         window.removeEventListener('storage', handleStorage);
+        window.removeEventListener('soltapp_user_switched', loadInbox);
+        window.removeEventListener('soltapp_data_reset', loadInbox);
       }
       clearInterval(interval);
     };
   }, []);
+
+  const handleClearHistory = async () => {
+    await meetupOrderService.resetAllMeetupData();
+    setNotifications([]);
+    setConversations([]);
+    Alert.alert('Historial reiniciado', 'Se han limpiado todas las órdenes y notificaciones de prueba.');
+  };
 
   const handleOpenNotification = async (notif: SoltappNotification) => {
     await meetupOrderService.markNotificationAsRead(notif.id);
@@ -96,7 +108,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
         title: notif.product_title,
         price: notif.product_price,
         sellerName: notif.seller_name || 'yassvica',
-        buyerName: notif.buyer_name || 'Manuel Sans',
+        buyerName: notif.buyer_name || 'Comprador',
         imageUri: notif.product_image || '',
       },
     } as any);
@@ -112,7 +124,7 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
           title: item.productTitle,
           price: item.productPrice,
           sellerName: item.sellerName || 'yassvica',
-          buyerName: item.senderName || 'Manuel Sans',
+          buyerName: (item.role === 'seller' ? item.senderName : '') || 'Comprador',
           imageUri: item.productImage || '',
         },
       } as any);
@@ -182,11 +194,20 @@ export default function InboxView({ onOpenConversation }: InboxViewProps) {
         </View>
       </View>
 
-      {/* 2. Título de Sección Oficial */}
+      {/* 2. Título de Sección Oficial con botón de reset opcional */}
       <View style={styles.titleContainer}>
-        <Text style={styles.title}>
-          {subTab === 'messages' ? 'Bandeja de entrada' : 'Avisos y Notificaciones'}
-        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={styles.title}>
+            {subTab === 'messages' ? 'Bandeja de entrada' : 'Avisos y Notificaciones'}
+          </Text>
+          {(notifications.length > 0 || conversations.length > 0) && (
+            <TouchableOpacity onPress={handleClearHistory} activeOpacity={0.7} style={{ paddingVertical: 4, paddingHorizontal: 8 }}>
+              <Text style={{ fontSize: 12, color: '#9CA3AF', textDecorationLine: 'underline' }}>
+                Limpiar pruebas
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <Text style={styles.subtitle}>
           {subTab === 'messages'
             ? 'Gestiona tus compras, ventas y mensajes en curso.'
