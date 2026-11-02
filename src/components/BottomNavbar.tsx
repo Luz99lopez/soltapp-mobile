@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { meetupOrderService } from '../services/meetupOrderService';
 
 // Componentes SVG oficiales de Soltapp
-import HomeIcon from '../../assets/svgs/Home.svg';
+import AvatarIcon from '../../assets/svgs/Avatar.svg';
 import CorazonIcon from '../../assets/svgs/Corazón.svg';
+import HomeIcon from '../../assets/svgs/Home.svg';
 import MasIcon from '../../assets/svgs/Más.svg';
 import MailIcon from '../../assets/svgs/mail.svg';
-import AvatarIcon from '../../assets/svgs/Avatar.svg';
 
 export type BottomNavTab = 'home' | 'favorites' | 'upload' | 'inbox' | 'profile';
 
@@ -22,6 +23,7 @@ const INACTIVE_COLOR = '#9098B1';
 
 export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
   useEffect(() => {
@@ -82,7 +84,7 @@ export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProp
   };
 
   return (
-    <View style={styles.bottomNavContainer}>
+    <View style={[styles.bottomNavContainer, { paddingBottom: Platform.OS === 'android' ? 48 : 20 }]}>
       <View style={styles.bottomNav}>
         {/* 1. Inicio */}
         <TouchableOpacity
@@ -132,7 +134,7 @@ export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProp
           </Text>
         </TouchableOpacity>
 
-        {/* 4. Buzón */}
+        {/* 4. Buzón con badge de notificaciones */}
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => handlePress('inbox')}
@@ -185,12 +187,12 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#FFFFFF',
     zIndex: 100,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
   bottomNav: {
     height: 60,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',

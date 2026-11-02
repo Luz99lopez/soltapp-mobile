@@ -5,7 +5,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Platform,
@@ -18,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../supabase';
 import CategoriesMenuModal from '../components/CategoriesMenuModal';
 import BottomNavbar from '../components/BottomNavbar';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import TopNavbar from '../components/TopNavbar';
 import InteractiveLocationMap, {
   LocationCoordinates,
@@ -483,8 +483,8 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.container}>
         {/* ========================================================= */}
@@ -918,6 +918,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 0,
   },
   container: {
     flex: 1,
