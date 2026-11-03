@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
 import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 import { DEFAULT_COORDINATES, locationService } from '../src/services/locationService';
 
 // Estas pruebas importan el código REAL de src/services/locationService.ts.
