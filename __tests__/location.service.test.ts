@@ -28,7 +28,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   jest.useFakeTimers();
   jest.spyOn(console, 'warn').mockImplementation(() => {});
-  (global as any).fetch = fetchSimulado;
+  (globalThis as any).fetch = fetchSimulado;
   (Platform as any).OS = 'ios';
 });
 
