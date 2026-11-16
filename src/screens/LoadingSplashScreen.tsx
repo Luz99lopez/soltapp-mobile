@@ -5,6 +5,7 @@ import {
   StatusBar,
   Animated,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -24,19 +25,20 @@ export default function LoadingSplashScreen() {
 
   useEffect(() => {
     let isMounted = true;
+    const useNative = Platform.OS !== 'web';
 
     // 1. Animación de entrada del logo
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 600,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
         friction: 7,
         tension: 40,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
       }),
     ]).start();
 
@@ -51,7 +53,7 @@ export default function LoadingSplashScreen() {
           Animated.timing(fadeAnim, {
             toValue: 0,
             duration: 350,
-            useNativeDriver: true,
+            useNativeDriver: useNative,
           }).start(() => {
             if (!isMounted) return;
             if (session) {
@@ -60,12 +62,12 @@ export default function LoadingSplashScreen() {
               router.replace('/login' as any);
             }
           });
-        }, 1200);
+        }, 1000);
       } catch {
         setTimeout(() => {
           if (!isMounted) return;
           router.replace('/login' as any);
-        }, 1200);
+        }, 1000);
       }
     };
 
@@ -78,7 +80,7 @@ export default function LoadingSplashScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={BG_COLOR} />
+      <StatusBar barStyle="light-content" />
       <View style={styles.centerWrapper}>
         <Animated.View
           style={[
@@ -99,10 +101,13 @@ export default function LoadingSplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: BG_COLOR,
   },
   centerWrapper: {
     flex: 1,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },

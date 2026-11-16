@@ -20,6 +20,9 @@ async function uriToUploadPayload(
       const subtype = contentType.split('/')[1] || 'jpeg';
       const extension = subtype === 'jpeg' ? 'jpg' : subtype;
       const arrayBuffer = decode(base64Data);
+      if (arrayBuffer.byteLength < 50) {
+        throw new Error('La imagen en base64 está vacía o dañada.');
+      }
       return { payload: arrayBuffer, contentType, extension };
     }
   }
@@ -28,6 +31,11 @@ async function uriToUploadPayload(
   try {
     const response = await fetch(uri);
     const blob = await response.blob();
+
+    if (blob.size < 50) {
+      throw new Error(`El archivo de imagen no es válido o está vacío (${blob.size} bytes).`);
+    }
+
     const contentType = blob.type || 'image/jpeg';
     const subtype = contentType.split('/')[1] || 'jpeg';
     const extension = subtype === 'jpeg' ? 'jpg' : subtype.split('+')[0];
@@ -45,14 +53,23 @@ async function uriToUploadPayload(
           // Si devuelve base64 Data URL
           const base64Part = reader.result.split(',')[1];
           if (base64Part) {
+            const buf = decode(base64Part);
+            if (buf.byteLength < 50) {
+              reject(new Error('La imagen decodificada no contiene datos válidos.'));
+              return;
+            }
             resolve({
-              payload: decode(base64Part),
+              payload: buf,
               contentType,
               extension,
             });
             return;
           }
         } else if (reader.result instanceof ArrayBuffer) {
+          if (reader.result.byteLength < 50) {
+            reject(new Error('La imagen leída no contiene datos válidos.'));
+            return;
+          }
           resolve({
             payload: reader.result,
             contentType,

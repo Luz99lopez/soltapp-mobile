@@ -1,64 +1,111 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  SafeAreaView,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
-  Platform,
-  Image,
-  Alert,
-  ActivityIndicator,
-  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { supabase } from '../supabase';
-import { fetchHomeProducts, ProductListItem } from '../services';
-import CategoriesMenuModal, { CategoryItem } from '../components/CategoriesMenuModal';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomNavbar, { BottomNavTab } from '../components/BottomNavbar';
-import TopNavbar from '../components/TopNavbar';
+import CategoriesMenuModal from '../components/CategoriesMenuModal';
 import InboxView from '../components/InboxView';
+
+import TopNavbar from '../components/TopNavbar';
+
+import { meetupOrderService } from '../services/meetupOrderService';
+import { accountService, SoltappUser, PRESET_USERS } from '../services/accountService';
+
 import UploadProductView from '../components/UploadProductView';
+import { fetchHomeProducts, ProductListItem, categoryService, Category } from '../services';
+import { supabase } from '../supabase';
+import FavoritesScreen from './FavoritesScreen';
+import FavoritesFeedback from '../components/FavoritesFeedback';
+import { useFavorites } from '../contexts/FavoritesProvider';
 
 // Componentes SVG oficiales de Soltapp desde assets/svgs
-import IsotipoConFondo from '../../assets/svgs/isotipo con fondo.svg';
-import BuscarIcon from '../../assets/svgs/Buscar.svg';
-import VerTodoIcon from '../../assets/svgs/Ver todo.svg';
-import AvatarIcon from '../../assets/svgs/Avatar.svg';
 import AutoIcon from '../../assets/svgs/Auto.svg';
-import MotoIcon from '../../assets/svgs/Moto.svg';
 import InmobiliariaIcon from '../../assets/svgs/Inmobiliaria.svg';
 import ModaIcon from '../../assets/svgs/Moda y accesorios.svg';
+import MotoIcon from '../../assets/svgs/Moto.svg';
 import MotorIcon from '../../assets/svgs/Motor y accesorios.svg';
-import HomeIcon from '../../assets/svgs/Home.svg';
-import CorazonIcon from '../../assets/svgs/Corazón.svg';
-import MasIcon from '../../assets/svgs/Más.svg';
-import MailIcon from '../../assets/svgs/mail.svg';
 
 // SVGs de Perfil
-import ProductoIcon from '../../assets/svgs/Producto.svg';
-import ComprasIcon from '../../assets/svgs/Compras.svg';
-import VentasIcon from '../../assets/svgs/Ventas.svg';
 import BilleteraIcon from '../../assets/svgs/Billetara.svg';
+import ComprasIcon from '../../assets/svgs/Compras.svg';
 import ConfiguracionIcon from '../../assets/svgs/Configuracion.svg';
-import PreguntaIcon from '../../assets/svgs/Pregunta.svg';
-import SiguienteIcon from '../../assets/svgs/Siguiente.svg';
 import EstrellaIcon from '../../assets/svgs/Estrella.svg';
+import PreguntaIcon from '../../assets/svgs/Pregunta.svg';
+import ProductoIcon from '../../assets/svgs/Producto.svg';
+import SiguienteIcon from '../../assets/svgs/Siguiente.svg';
+import VentasIcon from '../../assets/svgs/Ventas.svg';
 
 // Datos de Categorías con sus respectivos SVGs (Exacto al diseño y orden de Figma)
+// slug = categoría de Supabase que filtra; label = nombre en una sola línea
 const CATEGORIES = [
-  { id: '1', name: 'Autos', IconComponent: AutoIcon },
-  { id: '2', name: 'Motos', IconComponent: MotoIcon },
-  { id: '3', name: 'Motor y\naccesorios', IconComponent: MotorIcon },
-  { id: '4', name: 'Moda y\naccesorios', IconComponent: ModaIcon },
-  { id: '5', name: 'Inmobilia\nria', IconComponent: InmobiliariaIcon },
+  { id: '1', name: 'Autos', label: 'Autos', slug: 'autos', IconComponent: AutoIcon },
+  { id: '2', name: 'Motos', label: 'Motos', slug: 'motos', IconComponent: MotoIcon },
+  { id: '3', name: 'Motor y\naccesorios', label: 'Motor y accesorios', slug: 'motor-y-accesorios', IconComponent: MotorIcon },
+  { id: '4', name: 'Moda y\naccesorios', label: 'Moda y accesorios', slug: 'moda-y-accesorios', IconComponent: ModaIcon },
+  { id: '5', name: 'Inmobilia\nria', label: 'Inmobiliaria', slug: 'inmobiliaria', IconComponent: InmobiliariaIcon },
 ];
 
-const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
+// Devuelve el id de la categoría con ese slug más los de todas sus subcategorías
+const collectCategoryIds = (nodes: Category[], slug: string): number[] => {
+  for (const node of nodes) {
+    if (node.slug === slug) {
+      const ids: number[] = [];
+      const addWithChildren = (cat: Category) => {
+        ids.push(cat.id);
+        cat.children?.forEach(addWithChildren);
+      };
+      addWithChildren(node);
+      return ids;
+    }
+    const found = collectCategoryIds(node.children || [], slug);
+    if (found.length > 0) return found;
+  }
+  return [];
+};
+
+const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80';
+
+// Componente para renderizar la imagen de producto con fallback automático si la URL falla
+function ProductCardCover({
+  coverUrl,
+  fallbackUrl,
+  style,
+}: {
+  coverUrl: string;
+  fallbackUrl: string;
+  style: any;
+}) {
+  const [currentUri, setCurrentUri] = useState(coverUrl);
+
+  useEffect(() => {
+    setCurrentUri(coverUrl);
+  }, [coverUrl]);
+
+  return (
+    <Image
+      source={{ uri: currentUri }}
+      style={style}
+      onError={() => {
+        if (currentUri !== fallbackUrl) {
+          setCurrentUri(fallbackUrl);
+        }
+      }}
+    />
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -90,10 +137,59 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadProducts();
+
+    // Sincronización en tiempo real para remover productos vendidos del catálogo
+    let ch: any = null;
+    try {
+      ch = supabase
+        .channel('soltapp-home-sync')
+        .on('broadcast', { event: 'product_sold' }, () => {
+          loadProducts();
+        })
+        .on('broadcast', { event: 'new_meetup_order' }, () => {
+          loadProducts();
+        })
+        .subscribe();
+    } catch {}
+
+    const handleSold = () => {
+      loadProducts();
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('storage', handleSold);
+      window.addEventListener('soltapp_product_sold', handleSold);
+    }
+
+    return () => {
+      ch?.unsubscribe();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleSold);
+        window.removeEventListener('soltapp_product_sold', handleSold);
+      }
+    };
   }, [loadProducts]);
 
+  // Filtro por categoría (carrusel o modal "Más categorias")
+  const [selectedCategory, setSelectedCategory] = useState<{ slug: string; name: string } | null>(null);
+  const [categoryTree, setCategoryTree] = useState<Category[]>([]);
+
   useEffect(() => {
-    if (params?.tab === 'inbox') {
+    categoryService
+      .getCategoryTree()
+      .then(setCategoryTree)
+      .catch((err) => console.error('[HomeScreen.loadCategories] Error:', err));
+  }, []);
+
+  // Tocar la categoría ya elegida la desmarca y vuelve a mostrar todo
+  const handleCategoryPress = (category: { slug: string; name: string }) => {
+    setSelectedCategory((prev) => (prev?.slug === category.slug ? null : category));
+  };
+
+  useEffect(() => {
+    if (params?.tab === 'home') {
+      setActiveTab('home');
+    } else if (params?.tab === 'inbox') {
       setActiveTab('inbox');
     } else if (params?.tab === 'upload') {
       setActiveTab('upload');
@@ -129,11 +225,22 @@ export default function HomeScreen() {
     if (text.includes('figura') || text.includes('twitch') || text.includes('league') || text.includes('lol') || text.includes('juego') || text.includes('anime')) {
       return 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&q=80';
     }
-    if (text.includes('iphone') || text.includes('celular') || text.includes('telefono') || text.includes('apple') || text.includes('samsung')) {
-      return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=600&q=80';
+    if (
+      text.includes('iphone') ||
+      text.includes('celular') ||
+      text.includes('telefono') ||
+      text.includes('apple') ||
+      text.includes('samsung') ||
+      text.includes('motorola') ||
+      text.includes('xiaomi') ||
+      text.includes('smartphone') ||
+      text.includes('tecnología') ||
+      text.includes('electronica')
+    ) {
+      return 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=600&q=80';
     }
     if (text.includes('auto') || text.includes('volkswagen') || text.includes('gol') || text.includes('vehiculo') || text.includes('coche')) {
-      return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=600&q=80';
+      return 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=500&q=80';
     }
     if (text.includes('zapatilla') || text.includes('nike') || text.includes('ropa') || text.includes('moda')) {
       return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&q=80';
@@ -159,8 +266,18 @@ export default function HomeScreen() {
     return url;
   };
 
-  // Filtrado de publicaciones por barra de búsqueda
+  // Ids de la categoría elegida y sus subcategorías (vacío si no existe en Supabase)
+  const selectedCategoryIds = selectedCategory
+    ? collectCategoryIds(categoryTree, selectedCategory.slug)
+    : [];
+
+  // Filtrado de publicaciones por categoría y barra de búsqueda
   const filteredProducts = products.filter((p) => {
+    if (selectedCategory) {
+      const matchesCategory =
+        selectedCategoryIds.includes(p.category_id) || p.category?.slug === selectedCategory.slug;
+      if (!matchesCategory) return false;
+    }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
@@ -170,11 +287,17 @@ export default function HomeScreen() {
     );
   });
 
-  // Distribución de productos en secciones sin duplicación innecesaria
-  const nearbyProducts = filteredProducts.length > 2 ? filteredProducts.slice(0, 2) : filteredProducts;
-  const recentProducts = filteredProducts.length > 2 ? filteredProducts.slice(2) : filteredProducts;
+  // Distribución de productos en secciones sin duplicación innecesaria.
+  // Con una categoría elegida se muestran todos juntos en una sola grilla.
+  const nearbyProducts = selectedCategory
+    ? []
+    : filteredProducts.length > 2 ? filteredProducts.slice(0, 2) : filteredProducts;
+  const recentProducts = selectedCategory
+    ? filteredProducts
+    : filteredProducts.length > 2 ? filteredProducts.slice(2) : filteredProducts;
 
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const { entries: favoriteEntries, pending: favoritePending, loading: favoritesLoading, ready: favoritesReady, toggle: toggleFavorite } = useFavorites();
+  const favorites = favoriteEntries.map((entry) => entry.productId);
   const [categoriesModalVisible, setCategoriesModalVisible] = useState<boolean>(false);
 
   const handleProductPress = (productId: string) => {
@@ -235,29 +358,66 @@ export default function HomeScreen() {
     if (meta.location) setEditLocation(meta.location);
   };
 
-  const userName =
-    currentUser?.user_metadata?.full_name ||
-    currentUser?.user_metadata?.name ||
-    `${editFirstName} ${editLastName}`.trim() ||
-    (currentUser?.email ? currentUser.email.split('@')[0] : 'Manuel Sans');
+  const [currentAccount, setCurrentAccount] = useState<SoltappUser>(PRESET_USERS[0]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAccount = async () => {
+      try {
+        const user = await accountService.getCurrentUser();
+        if (isMounted) {
+          setCurrentAccount(user);
+        }
+      } catch {}
+    };
+
+    fetchAccount();
+
+    const handleStorage = () => {
+      fetchAccount();
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorage);
+      window.addEventListener('soltapp_user_switched', handleStorage);
+      window.addEventListener('soltapp_data_reset', handleStorage);
+    }
+
+    return () => {
+      isMounted = false;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorage);
+        window.removeEventListener('soltapp_user_switched', handleStorage);
+        window.removeEventListener('soltapp_data_reset', handleStorage);
+      }
+    };
+  }, []);
+
+  const userName = currentAccount.fullName;
   const userAvatar =
+    currentAccount.avatarUrl ||
     currentUser?.user_metadata?.avatar_url ||
     currentUser?.user_metadata?.picture ||
     null;
+  const userYear = currentAccount.sinceYear;
 
-  const userYear = currentUser?.created_at
-    ? new Date(currentUser.created_at).getFullYear()
-    : '2026';
+  const handleSwitchAccount = async () => {
+    const presetUsers = accountService.getPresetUsers();
+    const currentIndex = presetUsers.findIndex((u) => u.id === currentAccount.id);
+    const nextIndex = (currentIndex + 1) % presetUsers.length;
+    const nextUser = presetUsers[nextIndex];
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    await accountService.switchUser(nextUser.id);
+    setCurrentAccount(nextUser);
+    Alert.alert(
+      'Usuario cambiado',
+      `Ahora estás navegando como ${nextUser.fullName}. Tu buzón, publicaciones y compras corresponden a este usuario.`
     );
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    await accountService.clearActiveUser();
     router.replace('/login' as any);
   };
 
@@ -292,14 +452,26 @@ export default function HomeScreen() {
     }
   };
 
+  const handlePressCompras = () => {
+    router.push('/compras' as any);
+  };
+
+  const handlePressVentas = () => {
+    router.push({ pathname: '/compras', params: { tab: 'ventas' } } as any);
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+
+
+
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.container}>
-        {/* ========================================================= */}
+        {/* = */}
         {/* 1. HEADER NAVBAR SUPERIOR OFICIAL (COMPARTIDO)           */}
-        {/* ========================================================= */}
+        {/* = */}
         <TopNavbar
           activeScreen={activeTab === 'profile' ? 'profile' : 'home'}
           searchQuery={searchQuery}
@@ -316,13 +488,14 @@ export default function HomeScreen() {
           }}
         />
 
-        {/* ========================================================= */}
+        {/* = */}
         {/* 2. CONTENIDO PRINCIPAL: FEED HOME vs MENÚ "TÚ"            */}
-        {/* ========================================================= */}
+        {/* = */}
+        <FavoritesFeedback />
         {activeTab === 'profile' ? (
-          /* ========================================================= */
+          /* = */
           /* MENÚ DESPLEGABLE / VISTA "TÚ" (Figma Referencia 1)       */
-          /* ========================================================= */
+          /* = */
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.tuMenuScrollContent}
@@ -356,7 +529,7 @@ export default function HomeScreen() {
                   <EstrellaIcon width={16} height={16} />
                   <EstrellaIcon width={16} height={16} />
                   <EstrellaIcon width={16} height={16} />
-                  <Text style={styles.tuRatingCount}>(1)</Text>
+                  <Text style={styles.tuRatingCount}>({currentAccount.rating})</Text>
                 </View>
 
                 <Text style={styles.tuMemberSince}>En soltapp desde {userYear}</Text>
@@ -380,10 +553,14 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* SECCIÓN: TRANSACCIONES */}
+            {/* SECCIÓN: TRANSACCIONES (Cualquier cuenta puede comprar y vender) */}
             <View style={styles.tuSection}>
               <Text style={styles.tuSectionTitle}>TRANSACCIONES</Text>
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handlePressCompras}
+              >
                 <View style={styles.tuMenuItemLeft}>
                   <ComprasIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Compras</Text>
@@ -391,7 +568,11 @@ export default function HomeScreen() {
                 <SiguienteIcon width={14} height={14} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.tuMenuItem} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handlePressVentas}
+              >
                 <View style={styles.tuMenuItemLeft}>
                   <VentasIcon width={22} height={22} />
                   <Text style={styles.tuMenuItemText}>Ventas</Text>
@@ -422,6 +603,21 @@ export default function HomeScreen() {
                 </View>
                 <SiguienteIcon width={14} height={14} />
               </TouchableOpacity>
+
+              {/* Conmutador de Usuario para pruebas en desarrollo */}
+              <TouchableOpacity
+                style={styles.tuMenuItem}
+                activeOpacity={0.7}
+                onPress={handleSwitchAccount}
+              >
+                <View style={styles.tuMenuItemLeft}>
+                  <Ionicons name="people-outline" size={20} color="#0D9488" style={{ marginRight: 12 }} />
+                  <Text style={[styles.tuMenuItemText, { color: '#0D9488', fontWeight: '700' }]}>
+                    Cambiar usuario activo (Simulación)
+                  </Text>
+                </View>
+                <SiguienteIcon width={14} height={14} />
+              </TouchableOpacity>
             </View>
 
             {/* SECCIÓN: OTROS */}
@@ -449,9 +645,9 @@ export default function HomeScreen() {
             </View>
           </ScrollView>
         ) : activeTab === 'inbox' ? (
-          /* ========================================================= */
+          /* = */
           /* BANDEJA DE ENTRADA / BUZÓN (Captura Referencia)          */
-          /* ========================================================= */
+          /* = */
           <InboxView
             onOpenConversation={(conv) => {
               router.push({
@@ -464,10 +660,12 @@ export default function HomeScreen() {
               } as any);
             }}
           />
+        ) : activeTab === 'favorites' ? (
+          <FavoritesScreen searchQuery={searchQuery} />
         ) : activeTab === 'upload' ? (
-          /* ========================================================= */
+          /* = */
           /* VISTA SUBIR PRODUCTO / ANUNCIO (Figma Referencia)        */
-          /* ========================================================= */
+          /* = */
           <UploadProductView
             userLocation={editLocation || 'C1629 Pilar'}
             onProductCreated={() => {
@@ -518,12 +716,18 @@ export default function HomeScreen() {
             >
               {CATEGORIES.map((cat) => {
                 const Icon = cat.IconComponent;
+                const isSelected = selectedCategory?.slug === cat.slug;
                 return (
-                  <TouchableOpacity key={cat.id} style={styles.categoryItem} activeOpacity={0.75}>
-                    <View style={styles.categoryCircle}>
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={styles.categoryItem}
+                    activeOpacity={0.75}
+                    onPress={() => handleCategoryPress({ slug: cat.slug, name: cat.label })}
+                  >
+                    <View style={[styles.categoryCircle, isSelected && styles.categoryCircleActive]}>
                       <Icon width={28} height={28} />
                     </View>
-                    <Text style={styles.categoryName} numberOfLines={2}>
+                    <Text style={[styles.categoryName, isSelected && styles.categoryNameActive]} numberOfLines={2}>
                       {cat.name}
                     </Text>
                   </TouchableOpacity>
@@ -544,18 +748,26 @@ export default function HomeScreen() {
                   No se encontraron productos
                 </Text>
                 <Text style={{ marginTop: 4, fontSize: 13, color: '#9098B1', textAlign: 'center' }}>
-                  {searchQuery.trim() ? 'Prueba con otro término de búsqueda.' : 'Sé el primero en publicar un producto.'}
+                  {searchQuery.trim()
+                    ? 'Prueba con otro término de búsqueda.'
+                    : selectedCategory
+                      ? `Todavía no hay publicaciones en ${selectedCategory.name}.`
+                      : 'Sé el primero en publicar un producto.'}
                 </Text>
                 <TouchableOpacity
-                  onPress={loadProducts}
+                  onPress={selectedCategory ? () => setSelectedCategory(null) : loadProducts}
                   style={{ marginTop: 16, backgroundColor: '#E6FDF8', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 }}
                 >
-                  <Text style={{ color: '#0D9488', fontSize: 13, fontWeight: '600' }}>Actualizar</Text>
+                  <Text style={{ color: '#0D9488', fontSize: 13, fontWeight: '600' }}>
+                    {selectedCategory ? 'Ver todas las categorías' : 'Actualizar'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
-                {/* Sección: Cerca de donde estás - Pilar */}
+                {/* Sección: Cerca de donde estás - Pilar (oculta al filtrar por categoría) */}
+                {nearbyProducts.length > 0 && (
+                <>
                 <View style={styles.sectionHeader}>
                   <View style={styles.sectionTitleWithLocation}>
                     <Text style={styles.sectionTitle}>Cerca de donde estás</Text>
@@ -577,6 +789,7 @@ export default function HomeScreen() {
                   {nearbyProducts.map((prod) => {
                     const isFav = favorites.includes(prod.id);
                     const coverUrl = getProductCoverImage(prod);
+                    const fallbackUrl = getContextualFallback(prod.title, prod.category?.name);
                     const formattedPrice = formatProductPrice(prod.price, prod.currency);
 
                     return (
@@ -587,10 +800,14 @@ export default function HomeScreen() {
                         onPress={() => handleProductPress(prod.id)}
                       >
                         <View style={styles.imageContainer}>
-                          <Image source={{ uri: coverUrl }} style={styles.productImage} />
+                          <ProductCardCover coverUrl={coverUrl} fallbackUrl={fallbackUrl} style={styles.productImage} />
                           <TouchableOpacity
                             style={styles.favoriteButton}
-                            onPress={() => toggleFavorite(prod.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={isFav ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                            accessibilityState={{ selected: isFav, disabled: !favoritesReady || favoritesLoading || favoritePending.includes(prod.id) }}
+                            disabled={!favoritesReady || favoritesLoading || favoritePending.includes(prod.id)}
+                            onPress={(event) => { event.stopPropagation(); void toggleFavorite(prod.id, prod); }}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
                             <Ionicons
@@ -616,11 +833,15 @@ export default function HomeScreen() {
                     );
                   })}
                 </ScrollView>
+                </>
+                )}
 
-                {/* Sección: Lo recién publicado */}
+                {/* Sección: Lo recién publicado (o la categoría elegida) */}
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Lo recién publicado</Text>
-                  <TouchableOpacity>
+                  <Text style={styles.sectionTitle}>
+                    {selectedCategory ? selectedCategory.name : 'Lo recién publicado'}
+                  </Text>
+                  <TouchableOpacity onPress={() => setSelectedCategory(null)}>
                     <Text style={styles.seeAllText}>Ver todo</Text>
                   </TouchableOpacity>
                 </View>
@@ -629,6 +850,7 @@ export default function HomeScreen() {
                   {recentProducts.map((prod) => {
                     const isFav = favorites.includes(prod.id);
                     const coverUrl = getProductCoverImage(prod);
+                    const fallbackUrl = getContextualFallback(prod.title, prod.category?.name);
                     const formattedPrice = formatProductPrice(prod.price, prod.currency);
 
                     return (
@@ -639,10 +861,14 @@ export default function HomeScreen() {
                         onPress={() => handleProductPress(prod.id)}
                       >
                         <View style={styles.gridImageContainer}>
-                          <Image source={{ uri: coverUrl }} style={styles.productImage} />
+                          <ProductCardCover coverUrl={coverUrl} fallbackUrl={fallbackUrl} style={styles.productImage} />
                           <TouchableOpacity
                             style={styles.favoriteButton}
-                            onPress={() => toggleFavorite(prod.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={isFav ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                            accessibilityState={{ selected: isFav, disabled: !favoritesReady || favoritesLoading || favoritePending.includes(prod.id) }}
+                            disabled={!favoritesReady || favoritesLoading || favoritePending.includes(prod.id)}
+                            onPress={(event) => { event.stopPropagation(); void toggleFavorite(prod.id, prod); }}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           >
                             <Ionicons
@@ -673,7 +899,7 @@ export default function HomeScreen() {
           </ScrollView>
         )}
 
-        {/* ========================================================= */}
+        {/* = */}
         {/* 3. BARRA DE NAVEGACIÓN INFERIOR (COMPONENTE COMPARTIDO) */}
         <BottomNavbar activeTab={activeTab} onTabPress={(tab: BottomNavTab) => setActiveTab(tab)} />
 
@@ -688,6 +914,8 @@ export default function HomeScreen() {
           }}
           onSelectCategory={(category) => {
             setCategoriesModalVisible(false);
+            // "Ver todo" no tiene slug: quita el filtro
+            setSelectedCategory(category.slug ? { slug: category.slug, name: category.name } : null);
           }}
         />
       </View>
@@ -704,6 +932,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 0,
   },
   container: {
     flex: 1,
@@ -798,12 +1027,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 95,
+    paddingBottom: 130,
   },
 
-  // ==========================================
+  // 
   // ESTILOS PANTALLA "TU PERFIL" (Figma exacto)
-  // ==========================================
+  // 
   editProfileScrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -1059,9 +1288,9 @@ const styles = StyleSheet.create({
     color: '#0D9488',
   },
 
-  // ==========================================
+  // 
   // ESTILOS MENÚ DESPLEGABLE "TÚ" (Figma Referencia 1)
-  // ==========================================
+  // 
   tuMenuScrollContent: {
     paddingHorizontal: 0,
     paddingBottom: 110,
@@ -1113,6 +1342,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: TEXT_DARK,
     marginBottom: 4,
+  },
+  roleBadgeHeaderPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+    marginBottom: 4,
+  },
+  roleBadgeSeller: {
+    backgroundColor: '#CCFBF1',
+  },
+  roleBadgeBuyer: {
+    backgroundColor: '#F1F5F9',
+  },
+  roleBadgeHeaderPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  roleBadgeSellerText: {
+    color: '#0D9488',
+  },
+  roleBadgeBuyerText: {
+    color: '#475569',
   },
   tuRatingRow: {
     flexDirection: 'row',
@@ -1295,6 +1547,15 @@ const styles = StyleSheet.create({
     color: '#9098B1',
     textAlign: 'center',
     lineHeight: 15,
+  },
+  categoryCircleActive: {
+    borderWidth: 2,
+    borderColor: PRIMARY_COLOR,
+    backgroundColor: '#E6FDF8',
+  },
+  categoryNameActive: {
+    color: '#0D9488',
+    fontWeight: '700',
   },
   moreCategoriesText: {
     fontSize: 14,

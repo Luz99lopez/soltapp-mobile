@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { storageService } from './storageService';
+import { meetupOrderService } from './meetupOrderService';
 import {
   Product,
   ProductListItem,
@@ -24,13 +25,26 @@ export async function uploadProductImageToStorage(
   return storageService.uploadProductImage(rawUrl, productId);
 }
 
+const MOTOROLA_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&q=80';
+
+function sanitizeImageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.includes('1793565137202_km7ayi7')) {
+    return MOTOROLA_FALLBACK_IMAGE;
+  }
+  return url;
+}
+
 /**
  * Helper para normalizar la imagen de portada y ordenar la lista de imágenes
  */
 function normalizeProductListItem(raw: any): ProductListItem {
-  const images = (raw.images || []).sort(
-    (a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)
-  );
+  const images = (raw.images || [])
+    .map((img: any) => ({
+      ...img,
+      image_url: sanitizeImageUrl(img.image_url) || img.image_url,
+    }))
+    .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
 
   const coverImg =
     images.find((img: any) => img.is_cover)?.image_url ||
@@ -55,6 +69,11 @@ export const productService = {
    * Ordenados de forma descendente por created_at con sus imágenes
    */
   async fetchHomeProducts(): Promise<ProductListItem[]> {
+    let soldIds: string[] = [];
+    try {
+      soldIds = await meetupOrderService.getSoldProductIds();
+    } catch {}
+
     const { data, error } = await supabase
       .from('products')
       .select(
@@ -84,11 +103,16 @@ export const productService = {
       throw new Error(`Error al obtener productos para el Home: ${error.message}`);
     }
 
-    return (data || []).map((prod: any) => {
+    const filtered = (data || []).filter((prod: any) => !soldIds.includes(prod.id));
+
+    return filtered.map((prod: any) => {
       const rawImages = prod.product_images || prod.images || [];
-      const images = rawImages.sort(
-        (a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)
-      );
+      const images = rawImages
+        .map((img: any) => ({
+          ...img,
+          image_url: sanitizeImageUrl(img.image_url) || img.image_url,
+        }))
+        .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
       const cover =
         images.find((img: any) => img.is_cover)?.image_url ||
         images[0]?.image_url ||
@@ -193,11 +217,19 @@ export const productService = {
       throw new Error(`Error al listar productos: ${error.message}`);
     }
 
-    const formattedProducts = (data || []).map(normalizeProductListItem);
+    let soldIds: string[] = [];
+    if (!status || status === 'activo') {
+      try {
+        soldIds = await meetupOrderService.getSoldProductIds();
+      } catch {}
+    }
+
+    const filtered = (data || []).filter((prod: any) => !soldIds.includes(prod.id));
+    const formattedProducts = filtered.map(normalizeProductListItem);
 
     return {
       products: formattedProducts,
-      count: count || 0,
+      count: count ? Math.max(0, count - soldIds.length) : formattedProducts.length,
     };
   },
 
@@ -229,9 +261,12 @@ export const productService = {
     if (!data) return null;
 
     // Ordenar imágenes por posición
-    const sortedImages = (data.images || []).sort(
-      (a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)
-    );
+    const sortedImages = (data.images || [])
+      .map((img: any) => ({
+        ...img,
+        image_url: sanitizeImageUrl(img.image_url) || img.image_url,
+      }))
+      .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
 
     return {
       ...data,

@@ -1,13 +1,15 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { meetupOrderService } from '../services/meetupOrderService';
 
 // Componentes SVG oficiales de Soltapp
-import HomeIcon from '../../assets/svgs/Home.svg';
+import AvatarIcon from '../../assets/svgs/Avatar.svg';
 import CorazonIcon from '../../assets/svgs/Corazón.svg';
+import HomeIcon from '../../assets/svgs/Home.svg';
 import MasIcon from '../../assets/svgs/Más.svg';
 import MailIcon from '../../assets/svgs/mail.svg';
-import AvatarIcon from '../../assets/svgs/Avatar.svg';
 
 export type BottomNavTab = 'home' | 'favorites' | 'upload' | 'inbox' | 'profile';
 
@@ -21,6 +23,40 @@ const INACTIVE_COLOR = '#9098B1';
 
 export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkUnread = async () => {
+      try {
+        const notifs = await meetupOrderService.getNotifications();
+        if (isMounted) {
+          const unread = notifs.filter((n) => !n.read).length;
+          setUnreadCount(unread);
+        }
+      } catch {}
+    };
+
+    checkUnread();
+
+    const handleStorage = () => {
+      checkUnread();
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorage);
+    }
+
+    const interval = setInterval(checkUnread, 2000);
+    return () => {
+      isMounted = false;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorage);
+      }
+      clearInterval(interval);
+    };
+  }, []);
 
   const handlePress = (tab: BottomNavTab) => {
     if (onTabPress) {
@@ -39,7 +75,7 @@ export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProp
         router.push('/upload' as any);
         break;
       case 'inbox':
-        router.push('/chat' as any);
+        router.push({ pathname: '/home', params: { tab: 'inbox' } } as any);
         break;
       case 'profile':
         router.push('/profile' as any);
@@ -48,7 +84,7 @@ export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProp
   };
 
   return (
-    <View style={styles.bottomNavContainer}>
+    <View style={[styles.bottomNavContainer, { paddingBottom: Platform.OS === 'android' ? 48 : 20 }]}>
       <View style={styles.bottomNav}>
         {/* 1. Inicio */}
         <TouchableOpacity
@@ -98,17 +134,26 @@ export default function BottomNavbar({ activeTab, onTabPress }: BottomNavbarProp
           </Text>
         </TouchableOpacity>
 
-        {/* 4. Buzón */}
+        {/* 4. Buzón con badge de notificaciones */}
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => handlePress('inbox')}
           activeOpacity={0.7}
         >
-          <MailIcon
-            width={24}
-            height={24}
-            stroke={activeTab === 'inbox' ? ACTIVE_COLOR : INACTIVE_COLOR}
-          />
+          <View style={styles.iconWithBadgeWrapper}>
+            <MailIcon
+              width={24}
+              height={24}
+              stroke={activeTab === 'inbox' ? ACTIVE_COLOR : INACTIVE_COLOR}
+            />
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadgeDot}>
+                <Text style={styles.unreadBadgeText}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.navLabel, activeTab === 'inbox' && styles.navLabelActive]}>
             Buzón
           </Text>
@@ -142,12 +187,12 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#FFFFFF',
     zIndex: 100,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
   bottomNav: {
     height: 60,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
@@ -158,6 +203,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
+  },
+  iconWithBadgeWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadBadgeDot: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: '#E11D48',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
   navLabel: {
     fontSize: 12,
